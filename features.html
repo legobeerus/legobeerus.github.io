@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Features & Commands — AgentOS</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="nav">
+      <div class="container nav-inner">
+        <a class="brand" href="index.html">
+          <img src="media/logo.png" alt="AgentOS logo" class="logo" />
+          <span>AgentOS</span>
+        </a>
+        <nav class="nav-links">
+          <a href="features.html">Features</a>
+          <a href="privacy.html">Privacy</a>
+          <a href="terms.html">Terms</a>
+        </nav>
+      </div>
+    </header>
+
+    <section class="page-banner" aria-hidden="true"></section>
+
+    <main class="container content">
+      <h1>Features</h1>
+      <div class="features-intro">
+        <div class="intro-copy">
+          <p class="lead">AgentOS is built specifically to support the Office of Special Investigations (OSI). It gives Agents and staff a secure, auditable way to intake incidents, manage investigations, and record enforcement actions under the group's UCMJ-style rules — without leaving Discord.</p>
+          <p>Members can file structured incident reports and attach evidence; Agents can claim cases, run background and rule lookups, and record suspensions, detentions, or blacklist entries. The bot also automates routine community care tasks like inactivity follow-ups, verification reminders, and scheduled check-ins so teams keep cases moving.</p>
+        </div>
+        <img src="media/logo-spin.gif" alt="spinning logo" class="spin-feature" />
+      </div>
+
+      <section class="feature-list">
+        <article class="card">
+          <h3>Incident Reporting & Intake</h3>
+          <p>Community members submit structured incident forms that include involved users, timestampts, attachments, and a narrative. Submissions generate a case ID, are stored with an immutable timestamped audit trail, and can be auto-routed to the appropriate OSI desk or Agent team.</p>
+        </article>
+
+        <article class="card">
+          <h3>Investigation Workflow</h3>
+          <p>Cases can be claimed by OSI Agents, assigned to investigators, and progressed through discrete states (triage, investigation, resolution). Staff can add notes, attach evidence, and spawn private review threads for confidential discussion. All actions are logged for auditability.</p>
+        </article>
+
+        <article class="card">
+          <h3>Enforcement & UCMJ Actions</h3>
+          <p>Designed for a roleplay environment with UCMJ-style enforcement: authorized staff can record suspensions, detentions/arrests, and blacklist entries. Enforcement entries include rationale, duration, and the Agent who authorized the action. Escalation workflows let supervisors review and ratify major actions.</p>
+        </article>
+
+        <article class="card">
+          <h3>Background & Law Lookups</h3>
+          <p>Quick background checks surface prior suspensions, arrest-history, and blacklist matches. The bot can run rule/lookups against the group's regulations (UCMJ articles) to help investigators reference relevant statutes during a case.</p>
+        </article>
+
+        <article class="card">
+          <h3>Staff Tools & Automation</h3>
+          <p>Staff commands let OSI Agents add/search suspensions, run quota/points checks, bulk-apply sanctions, and automate routine moderation tasks. Filters and flagging rules can auto-create cases for Agent review.</p>
+        </article>
+
+        <article class="card">
+          <h3>Review UI & Interaction</h3>
+          <p>Submissions surface interactive buttons (Approve / Escalate / Request More Info) that open private review threads. Approvals generate templated responses and can trigger enforcement actions; escalations notify supervisors with case context.</p>
+        </article>
+
+        <article class="card">
+          <h3>Scheduling & Community Care</h3>
+          <p>The bot schedules follow-ups, sends inactivity notices to assigned Agents, and issues verification reminders. This keeps long-running investigations moving and ensures victims/witnesses receive timely updates.</p>
+        </article>
+
+        <article class="card">
+          <h3>Evidence Capture & Export</h3>
+          <p>Capture messages, attachments, and immutable metadata (timestamps, message IDs). Generate exportable case bundles for offline review or archival. Exports include a structured manifest and chain-of-custody information.</p>
+        </article>
+
+        <article class="card">
+          <h3>Integrations</h3>
+          <p>Out-of-the-box integrations include Roblox OAuth verification, Trello / ticket sync, webhook-based exports, and flexible API webhooks for custom tooling. Integrations respect configured retention and access controls.</p>
+        </article>
+      </section>
+
+      <h2 id="commands">Commands & Examples</h2>
+      <section class="commands-list">
+        <div class="cmd-grid">
+          <div class="cmd-card"><code>/agentos-verify &lt;roblox-username&gt;</code><p>Start the Roblox OAuth verification flow to link a Discord account to a Roblox account.</p></div>
+          <div class="cmd-card"><code>/submit</code><p>Open the guided incident submission form for users to file reports (includes attachments and narrative).</p></div>
+          <div class="cmd-card"><code>/anonymous-log</code><p>Submit an anonymous report or log entry (no Discord identity attached to the entry).</p></div>
+          <div class="cmd-card"><code>/arrest-history &lt;user&gt;</code><p>View a user's recorded arrest-history and past enforcement entries.</p></div>
+          <div class="cmd-card"><code>/arrest-log add &lt;user&gt; &lt;reason&gt;</code><p>Record an arrest/detention entry linked to a case or incident.</p></div>
+          <div class="cmd-card"><code>/background-check &lt;user&gt;</code><p>Run a quick background check summarizing prior suspensions, reports, and flags.</p></div>
+          <div class="cmd-card"><code>/blacklist-view &lt;user&gt;</code><p>Show blacklist matches and details for a given user.</p></div>
+          <div class="cmd-card"><code>/cancel-inactivity &lt;case|user&gt;</code><p>Cancel a pending inactivity notice or scheduled follow-up.</p></div>
+          <div class="cmd-card"><code>/checkgroups &lt;user&gt;</code><p>Check whether the specified Roblox user is a member of any groups from a configured pool of monitored Roblox groups; returns matches and group roles.</p></div>
+          <div class="cmd-card"><code>/checksecurity &lt;group&gt;</code><p>(Archived) Scan members of the given Roblox/Discord group against known hostile or blacklisted groups and produce a report of matches.</p></div>
+          <div class="cmd-card"><code>/inactivity-notice &lt;user|case&gt;</code><p>Send or schedule an inactivity notice to assigned Agents or the reported party.</p></div>
+          <div class="cmd-card"><code>/lawlookup &lt;article&gt;</code><p>Lookup UCMJ-style articles and show referenced rules relevant to a case.</p></div>
+          <div class="cmd-card"><code>/points &lt;user&gt;</code><p>Show or modify points/quota for a user (used in internal scoring/workflow).</p></div>
+          <div class="cmd-card"><code>/quota-check &lt;team|agent&gt;</code><p>Check current quotas or workload for Agents/teams.</p></div>
+          <div class="cmd-card"><code>/suspension-add &lt;user&gt; &lt;duration&gt;</code><p>Add a suspension entry with reason and duration (logs author and timestamp).</p></div>
+          <div class="cmd-card"><code>/suspension-search &lt;query&gt;</code><p>Search suspension records by user, reason, or case ID.</p></div>
+          <div class="cmd-card"><code>/update &lt;username&gt;</code><p>Update the selected user's main SGC rank on the OSI Google Sheets roster (syncs rank changes and records who made the update).</p></div>
+          
+        </div>
+      </section>
+
+      <h2>Data Controls & Privacy</h2>
+      <section>
+        <p>AgentOS provides admin-facing controls for data retention, export, and deletion. Case access is role-restricted; all moderation and enforcement actions are logged with an audit trail. See the <a href="privacy.html">Privacy Policy</a> for full details on data handling and retention.</p>
+      </section>
+
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <div class="brand-sm">
+          <img src="media/logo.png" alt="AgentOS" />
+          <span>AgentOS</span>
+        </div>
+        <nav class="footer-links">
+          <a href="privacy.html">Privacy Policy</a>
+          <a href="terms.html">Terms of Service</a>
+        </nav>
+        <p class="copyright">© <span id="year-features"></span> AgentOS</p>
+      </div>
+    </footer>
+    <script>document.getElementById('year-features').textContent=new Date().getFullYear();</script>
+  </body>
+</html>

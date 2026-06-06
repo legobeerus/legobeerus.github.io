@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AgentOS — Office of Special Investigations Bot</title>
+    <meta name="description" content="AgentOS — all-purpose Discord bot for Stargate Command's Office of Special Investigations." />
+    <link rel="stylesheet" href="styles.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <header class="nav">
+      <div class="container nav-inner">
+        <a class="brand" href="index.html">
+          <img src="media/logo.png" alt="AgentOS logo" class="logo" />
+          <span>AgentOS</span>
+        </a>
+        <nav class="nav-links">
+          <a href="features.html">Features</a>
+          <a href="privacy.html">Privacy</a>
+          <a href="terms.html">Terms</a>
+        </nav>
+        <div class="nav-cta">
+          <a class="btn btn-primary" href="https://discord.com/oauth2/authorize?client_id=1433761317038198874&permissions=4503979732028416&integration_type=0&scope=applications.commands+bot">Invite</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero" style="background-image: url('media/bg.jpg')">
+        <div class="overlay"></div>
+        <div class="container hero-inner">
+          <div class="hero-copy">
+            <h1>AgentOS</h1>
+            <p class="lead">All-purpose Discord bot built for the Office of Special Investigations — reliable, fast, and configurable.</p>
+            <div class="hero-actions">
+              <a class="btn btn-primary" id="invite" href="https://discord.com/oauth2/authorize?client_id=1433761317038198874&permissions=4503979732028416&integration_type=0&scope=applications.commands+bot">Invite to Discord</a>
+              <a class="btn btn-ghost" href="features.html">Explore features</a>
+            </div>
+            <ul class="badges">
+              <li><strong>Primary:</strong> #00aff1</li>
+              <li><strong>Accent:</strong> #f5d77a</li>
+            </ul>
+          </div>
+
+          <div class="hero-media">
+            <img src="media/character.png" alt="Agent character" class="character" />
+          </div>
+        </div>
+      </section>
+
+      
+
+      <section id="features" class="container features">
+        <h2>Features</h2>
+        <div class="cards">
+          <article class="card">
+            <h3>Moderation</h3>
+            <p>Robust mod tools, logs, and role automation for a serious community.</p>
+          </article>
+          <article class="card">
+            <h3>Investigations</h3>
+            <p>Evidence collection aides, case tracking, and reports for OSI workflows.</p>
+          </article>
+          <article class="card">
+            <h3>Utility</h3>
+            <p>Custom commands, reminders, and data lookups tuned for Stargate Command.</p>
+          </article>
+        </div>
+
+        <section id="selected-commands" class="commands">
+          <h2>Selected Commands</h2>
+          <p class="lead">A small selection of frequently used commands to get Agents and members started. See <a href="features.html">Features</a> for the full command list.</p>
+          <div class="cmd-row">
+            <div class="cmd-card"><code>/submit</code><p>Open the guided incident submission form for users to file reports.</p></div>
+            <div class="cmd-card"><code>/agentos-verify &lt;roblox-username&gt;</code><p>Start Roblox OAuth verification to link Discord and Roblox accounts.</p></div>
+            <div class="cmd-card"><code>/background-check &lt;user&gt;</code><p>Quick summary of prior suspensions, arrests, and flags for a user.</p></div>
+            <div class="cmd-card"><code>/suspension-add &lt;user&gt; &lt;duration&gt;</code><p>Record a suspension with reason and duration (logged with author).</p></div>
+          </div>
+        </section>
+      </section>
+
+      
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <div class="brand-sm">
+          <img src="media/logo.png" alt="AgentOS" />
+          <span>AgentOS</span>
+        </div>
+        <nav class="footer-links">
+          <a href="privacy.html">Privacy Policy</a>
+          <a href="terms.html">Terms of Service</a>
+        </nav>
+        <p class="copyright">© <span id="year"></span> AgentOS</p>
+      </div>
+    </footer>
+
+    <script>
+      document.getElementById('year').textContent = new Date().getFullYear();
+    </script>
+  </body>
+</html>

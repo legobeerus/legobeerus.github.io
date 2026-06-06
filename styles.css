@@ -1,0 +1,151 @@
+:root{
+  --bg:#0b0b0b;
+  --fg:#ffffff;
+  --primary:#00aff1;
+  --link-visited:#004e7a;
+  --accent:#f5d77a;
+  --muted: #8b8b8b;
+  --max-width:1200px;
+  --nav-height:72px;
+  font-synthesis: none;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial}
+body{background:var(--bg);color:var(--fg);-webkit-font-smoothing:antialiased;padding-top:var(--nav-height)}
+.container{width:calc(100% - 40px);max-width:var(--max-width);margin:0 auto}
+
+/* Navigation */
+.nav{position:fixed;top:0;left:0;right:0;background:linear-gradient(180deg,rgba(0,0,0,0.6),rgba(0,0,0,0.4));backdrop-filter:blur(6px);z-index:40;height:var(--nav-height)}
+.nav-inner{position:relative;display:flex;align-items:center;justify-content:center;padding:22px 0}
+.brand{position:absolute;left:24px;display:flex;align-items:center;gap:14px;color:var(--fg);text-decoration:none}
+.brand .logo{height:44px;width:auto}
+.nav-links{display:flex;gap:18px;align-items:center}
+.nav-links a{text-decoration:none;opacity:.9;color:var(--fg);transition:background-color .18s ease,color .18s ease}
+.nav-cta{position:absolute;right:24px}
+.nav-cta .btn{margin-left:8px}
+.nav-links a{padding:8px 12px;border-radius:8px}
+
+/* Buttons */
+.btn{display:inline-block;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:600}
+.btn-primary{background:var(--primary);color:#000}
+.btn-ghost{border:1px solid rgba(255,255,255,0.08);color:var(--fg);background:transparent}
+
+/* Hero */
+.hero{position:relative;padding:80px 0;background-size:cover;background-position:center;color:var(--fg);overflow:hidden}
+.hero .overlay{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0.55),rgba(0,0,0,0.65))}
+.hero-inner{display:flex;gap:32px;align-items:center;position:relative}
+.hero-copy{flex:1;max-width:640px}
+.hero .hero-banner{max-width:240px;margin-bottom:8px}
+.hero h1{font-size:48px;margin:6px 0 12px}
+.lead{color:var(--muted);font-size:18px}
+.hero-actions{margin-top:18px;display:flex;gap:12px}
+.badges{list-style:none;padding:0;margin:18px 0 0;display:flex;gap:12px;color:var(--muted)}
+
+.hero-media{width:380px;display:flex;align-items:center;justify-content:center;position:relative}
+.character{width:320px;max-width:100%;border-radius:10px;display:block;border:0;background:transparent;outline:none;-webkit-backface-visibility:hidden;box-shadow:none !important;filter:none !important;-webkit-filter:none !important}
+.spin-deco{position:absolute;right:-20px;bottom:10px;width:120px;opacity:.9;filter:drop-shadow(0 10px 30px rgba(0,0,0,0.6))}
+
+/* Sections */
+h2{color:var(--fg);margin-top:28px}
+.features{padding:48px 0}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;margin-top:18px}
+.card{background:linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.02));padding:18px;border-radius:12px}
+.card h3{margin:0 0 8px}
+
+.commands{padding:28px 0}
+.commands code{background:rgba(255,255,255,0.04);padding:4px 8px;border-radius:6px}
+
+/* Footer */
+.site-footer{border-top:1px solid rgba(255,255,255,0.04);padding:24px 0;margin-top:40px}
+.footer-inner{display:flex;gap:12px;align-items:center;justify-content:space-between}
+.footer-links{display:flex;gap:12px}
+.footer-links a{text-decoration:none;color:var(--fg);transition:background-color .18s ease,color .18s ease;padding:6px 10px;border-radius:8px}
+
+/* Keep navbar/footer links white (override global visited color) */
+.nav-links a:visited, .footer-links a:visited{color:var(--fg)}
+
+/* Fill with secondary accent on hover */
+.nav-links a:hover,.nav-links a:focus,.footer-links a:hover,.footer-links a:focus{
+  background:var(--accent);
+  color:var(--bg);
+  text-decoration:none;
+}
+
+/* Global link styles: remove underline, make unclicked links primary blue
+  and clicked (visited) links the site's foreground color */
+a{color:var(--primary);text-decoration:none}
+a:visited{color:var(--link-visited)}
+a:hover,a:focus,a:active{color:var(--accent);text-decoration:none}
+
+/* Brand (AgentOS) should remain white in the nav */
+.nav .brand, a.brand{color:var(--fg);text-decoration:none}
+.nav .brand:visited, a.brand:visited{color:var(--fg)}
+
+/* Buttons should keep their intended colors and hover behavior
+  (override global link hover that fills with --accent) */
+.btn{color:inherit;text-decoration:none}
+.btn-ghost{color:var(--fg)}
+.btn-primary{color:#000}
+
+/* Hero/index buttons: preserve original hover behavior */
+.hero .btn, .hero .btn-ghost, .hero .btn-primary{color:inherit}
+/* Ensure hero buttons show white text on hover and are not filled with --accent */
+.hero .btn:hover, .hero .btn:focus, .hero .btn:active{color:var(--fg);text-decoration:none}
+.hero .btn-ghost:hover, .hero .btn-ghost:focus{background:rgba(255,255,255,0.06);color:var(--fg)}
+.hero .btn-primary:hover, .hero .btn-primary:focus, .hero #invite:hover, .hero #invite:focus{background:var(--primary);filter:brightness(0.88);color:#000 !important;text-decoration:none}
+
+/* Ensure primary buttons keep black text by default and white on hover
+  across the site (overrides earlier `color:inherit`). */
+.btn.btn-primary{color:#000}
+.btn.btn-primary:hover,.btn.btn-primary:focus,.btn.btn-primary:active{color:var(--fg);filter:brightness(0.95);text-decoration:none}
+.nav-cta .btn.btn-primary{color:#000}
+
+/* Ensure footer hovers visually match navbar hovers */
+.footer-links a:hover,.footer-links a:focus{background:var(--accent);color:var(--bg);text-decoration:none}
+
+/* make small footer logo consistent */
+.brand-sm img{height:28px;width:auto;display:inline-block}
+.brand-sm{display:flex;align-items:center;gap:8px;color:var(--fg)}
+
+/* page banner / parallax for features page */
+.page-banner{background-image:url('media/banner.png');background-size:contain;background-position:center top;background-repeat:no-repeat;background-attachment:fixed;min-height:240px;border-bottom:1px solid rgba(255,255,255,0.04);box-shadow:inset 0 -60px 80px rgba(0,0,0,0.45)}
+.content{padding:36px 0}
+.feature-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;margin-top:18px}
+.commands-list{margin-top:14px}
+
+/* Command card grid */
+.cmd-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:18px}
+.cmd-card{background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));padding:18px;border-radius:12px;border:1px solid rgba(255,255,255,0.04);min-height:120px;display:flex;flex-direction:column;justify-content:flex-start}
+.cmd-card code{display:block;background:rgba(0,0,0,0.25);padding:8px 10px;border-radius:8px;color:var(--fg);margin-bottom:10px;font-weight:700}
+.cmd-card p{margin:0;color:var(--muted);font-size:15px;line-height:1.4}
+
+/* Feature intro with spinning gif */
+.features-intro{display:flex;gap:24px;align-items:center;margin-bottom:18px}
+.features-intro .intro-copy{flex:1}
+.features-intro .spin-feature{width:180px;height:auto;border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,0.6);align-self:flex-start}
+
+@media (max-width:900px){
+  .features-intro{flex-direction:column-reverse;text-align:center}
+  .features-intro .spin-feature{width:140px}
+}
+
+/* Single-row showcase for index */
+.cmd-row{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:12px;margin-top:18px}
+@media (max-width:900px){
+  .cmd-row{grid-template-columns:repeat(2,minmax(160px,1fr))}
+}
+
+
+/* Responsiveness */
+@media (max-width:900px){
+  .hero-inner{flex-direction:column-reverse;text-align:center}
+  .hero-media{width:100%}
+  .hero h1{font-size:36px}
+  .nav-links{display:none}
+}
+
+/* Small animations */
+.card{transform:translateY(6px);transition:transform .28s ease,box-shadow .28s ease}
+.card:hover{transform:none;box-shadow:0 10px 30px rgba(0,0,0,0.55)}
+.hero h1, .card, .character{animation:fadeUp .6s ease both}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
