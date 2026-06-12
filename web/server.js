@@ -35,8 +35,12 @@ try{
   }
 }catch(e){ /* ignore */ }
 
-// Serve static site from parent folder
-const siteRoot = path.join(__dirname, '..', 'legobeerus.github.io');
+// Serve static site. Try expected layout, fall back to parent folder when running in Docker.
+let siteRoot = path.join(__dirname, '..', 'legobeerus.github.io');
+if (!require('fs').existsSync(siteRoot)) {
+  // fallback: static files may already be copied into parent folder (e.g. Docker build context)
+  siteRoot = path.join(__dirname, '..');
+}
 app.use(express.static(siteRoot));
 
 // Log useful startup info
@@ -98,8 +102,12 @@ app.get('/oauth/discord/callback', async (req, res)=>{
     req.session.user = { id: userData.id, username: userData.username, discriminator: userData.discriminator, avatar: userData.avatar };
     req.session.accessToken = accessToken; // kept only in session
 
-    const next = req.session.next || '/';
+    let next = req.session.next || '/';
     delete req.session.next;
+    // Validate `next` to avoid open redirects. Only allow same-origin paths starting with '/'
+    if (typeof next !== 'string' || !next.startsWith('/') ) {
+      next = '/';
+    }
     res.redirect(next);
   }catch(err){ console.error(err); res.status(500).send('OAuth error') }
 });
