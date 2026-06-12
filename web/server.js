@@ -177,6 +177,37 @@ app.get('/logout', (req, res)=>{
   });
 });
 
+// Proxy: fetch an exam's completed responses from the bot
+app.get('/api/exams/:id', async (req, res)=>{
+  if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
+  const botBase = process.env.BOT_BASE_URL;
+  if(!botBase) return res.status(500).json({ error: 'BOT_BASE_URL not configured on server' });
+  const url = `${botBase.replace(/\/$/,'')}/exams/${encodeURIComponent(req.params.id)}`;
+  console.log('Proxy GET to bot:', url, 'for user', req.session.user.id);
+  try{
+    const bresp = await fetch(url, { headers: { 'x-discord-token': req.session.accessToken, 'accept':'application/json' } });
+    const data = await bresp.json().catch(()=>null);
+    return res.status(bresp.status).json(data);
+  }catch(err){ console.error('proxy GET error', err); return res.status(502).json({ error: 'bad_gateway' }); }
+});
+
+// Proxy: submit grading results to the bot
+app.post('/api/exams/:id/grade', async (req, res)=>{
+  if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
+  const botBase = process.env.BOT_BASE_URL;
+  if(!botBase) return res.status(500).json({ error: 'BOT_BASE_URL not configured on server' });
+  const payload = req.body || {};
+  // basic validation
+  if(!Array.isArray(payload.grades)) return res.status(400).json({ error: 'missing grades array' });
+  const url = `${botBase.replace(/\/$/,'')}/exams/${encodeURIComponent(req.params.id)}/grade`;
+  console.log('Proxy POST to bot:', url, 'from user', req.session.user.id);
+  try{
+    const bresp = await fetch(url, { method: 'POST', headers: { 'Content-Type':'application/json', 'x-discord-token': req.session.accessToken }, body: JSON.stringify(payload) });
+    const data = await bresp.json().catch(()=>null);
+    return res.status(bresp.status).json(data);
+  }catch(err){ console.error('proxy POST error', err); return res.status(502).json({ error: 'bad_gateway' }); }
+});
+
 // Fallback: serve index.html for any other unmatched GET (SPA-style)
 app.get('*', (req, res, next) => {
   if (req.method !== 'GET') return next();

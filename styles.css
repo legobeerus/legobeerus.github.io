@@ -64,6 +64,12 @@ h2{color:var(--fg);margin-top:28px}
 /* Keep navbar/footer links white (override global visited color) */
 .nav-links a:visited, .footer-links a:visited{color:var(--fg)}
 
+/* Auth menu dropdown: keep links white in all states (clicked/focus/visited) */
+.auth-menu-dropdown a, .auth-menu-dropdown a:visited, .auth-menu-dropdown a:active, .auth-menu-dropdown a:focus{
+  color:var(--fg);
+  text-decoration:none;
+}
+
 /* Fill with secondary accent on hover */
 .nav-links a:hover,.nav-links a:focus,.footer-links a:hover,.footer-links a:focus{
   background:var(--accent);
