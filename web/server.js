@@ -1,5 +1,6 @@
 const express = require('express');
 const session = require('express-session');
+const cors = require('cors');
 const path = require('path');
 const fetch = global.fetch || require('node-fetch');
 const bodyParser = require('body-parser');
@@ -16,18 +17,25 @@ if(!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET){
 
 const app = express();
 app.use(bodyParser.json());
+
+// Configure cookie security based on BASE_URL protocol
+const isSecure = (BASE_URL||'').startsWith('https');
 app.use(session({
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false, sameSite: 'lax' }
+  cookie: { secure: isSecure, sameSite: isSecure ? 'none' : 'lax' }
 }));
+
+// Enable CORS for the static site origin so the frontend can call /api endpoints
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://legobeerus.github.io';
+app.use(cors({ origin: ALLOWED_ORIGIN, credentials: true }));
 
 // If BASE_URL is HTTPS (production behind a proxy like Railway), enable trust proxy
 try{
-  if((BASE_URL||'').startsWith('https')){
+  if(isSecure){
     app.set('trust proxy', 1);
-    // mark cookies as secure when running over HTTPS
+    // ensure session cookie appears as secure
     app.use((req, res, next)=>{
       if(req.session) req.session.cookie.secure = true;
       next();
@@ -103,6 +111,8 @@ app.get('/oauth/discord/callback', async (req, res)=>{
     req.session.user = { id: userData.id, username: userData.username, discriminator: userData.discriminator, avatar: userData.avatar };
     req.session.accessToken = accessToken; // kept only in session
 
+    console.log('/oauth/discord/callback - logged in user', req.session.user.id, req.session.user.username);
+
     let next = req.session.next || '/';
     delete req.session.next;
     // Validate `next` to avoid open redirects. Only allow same-origin paths starting with '/'
@@ -114,8 +124,14 @@ app.get('/oauth/discord/callback', async (req, res)=>{
 });
 
 app.get('/api/me', (req, res)=>{
-  if(req.session && req.session.user){ res.json(req.session.user); }
-  else res.status(204).json(null);
+  if(req.session && req.session.user){
+    console.log('/api/me - returning user', req.session.user.id);
+    res.json(req.session.user);
+  }
+  else {
+    console.log('/api/me - no session');
+    res.status(204).json(null);
+  }
 });
 
 app.get('/logout', (req, res)=>{
