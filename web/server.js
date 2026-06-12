@@ -60,6 +60,27 @@ app.use(express.static(siteRoot));
 console.log('Serving static site from', siteRoot);
 console.log('Configured BASE_URL:', BASE_URL);
 
+// Log existence of important static files for debugging
+const fs = require('fs');
+const checkFiles = [
+  'index.html',
+  'scripts/auth.js',
+  'scripts/server-config.js',
+  'styles.css',
+  'media/bg.jpg'
+];
+checkFiles.forEach(f=>{
+  const p = path.join(siteRoot, f);
+  console.log('STATIC CHECK:', f, fs.existsSync(p) ? 'FOUND' : 'MISSING', p);
+});
+
+// Health endpoint to list critical files
+app.get('/__filelist', (req, res)=>{
+  const info = {};
+  checkFiles.forEach(f=>{ info[f] = fs.existsSync(path.join(siteRoot, f)); });
+  res.json({ siteRoot, files: info });
+});
+
 // Provide a small dynamic config JS so clients always get correct AUTH_SERVER value
 app.get('/scripts/server-config.js', (req, res)=>{
   res.type('application/javascript');
@@ -69,14 +90,14 @@ app.get('/scripts/server-config.js', (req, res)=>{
 });
 
 // Ensure /scripts/auth.js is served from the static site root if present
-app.get('/scripts/auth.js', (req, res, next)=>{
+app.get('/scripts/auth.js', (req, res)=>{
   const p = path.join(siteRoot, 'scripts', 'auth.js');
-  if(require('fs').existsSync(p)){
+  if(fs.existsSync(p)){
     console.log('Serving static scripts/auth.js from', p);
     return res.sendFile(p);
   }
-  console.log('scripts/auth.js not found at', p);
-  next();
+  console.log('scripts/auth.js not found at', p, '-> returning 404 (avoid serving index.html)');
+  res.status(404).send('Not found');
 });
 
 // Serve index.html explicitly for root

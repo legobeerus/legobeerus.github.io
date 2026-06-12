@@ -20,7 +20,10 @@
           <a href="privacy.html">Privacy</a>
           <a href="terms.html">Terms</a>
         </nav>
-        <div class="nav-cta"></div>
+        <!-- Fallback login button: if the dynamic auth scripts fail to load, this ensures a direct OAuth redirect. -->
+        <div class="nav-cta">
+          <a id="fallback-login" class="btn btn-primary" href="https://authentic-achievement-production-69c8.up.railway.app/auth/discord?next=/">Login</a>
+        </div>
       </div>
     </header>
 
