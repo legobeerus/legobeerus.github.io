@@ -186,7 +186,12 @@ app.get('/api/exams/:id', async (req, res)=>{
   console.log('Proxy GET to bot:', url, 'for user', req.session.user.id);
   try{
     const bresp = await fetch(url, { headers: { 'x-discord-token': req.session.accessToken, 'accept':'application/json' } });
-    const data = await bresp.json().catch(()=>null);
+    const txt = await bresp.text().catch(()=>null);
+    let data = null;
+    try{ data = txt ? JSON.parse(txt) : null }catch(e){ data = txt }
+    if(!bresp.ok){
+      console.log('Bot returned', bresp.status, txt);
+    }
     return res.status(bresp.status).json(data);
   }catch(err){ console.error('proxy GET error', err); return res.status(502).json({ error: 'bad_gateway' }); }
 });
@@ -203,7 +208,10 @@ app.post('/api/exams/:id/grade', async (req, res)=>{
   console.log('Proxy POST to bot:', url, 'from user', req.session.user.id);
   try{
     const bresp = await fetch(url, { method: 'POST', headers: { 'Content-Type':'application/json', 'x-discord-token': req.session.accessToken }, body: JSON.stringify(payload) });
-    const data = await bresp.json().catch(()=>null);
+    const txt = await bresp.text().catch(()=>null);
+    let data = null;
+    try{ data = txt ? JSON.parse(txt) : null }catch(e){ data = txt }
+    if(!bresp.ok){ console.log('Bot POST returned', bresp.status, txt); }
     return res.status(bresp.status).json(data);
   }catch(err){ console.error('proxy POST error', err); return res.status(502).json({ error: 'bad_gateway' }); }
 });
