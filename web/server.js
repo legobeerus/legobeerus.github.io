@@ -71,6 +71,7 @@ app.get('/auth/discord', (req, res)=>{
   url.searchParams.set('scope', 'identify');
   // store next in session
   req.session.next = next;
+  console.log('/auth/discord hit; next=', next, ' -> redirecting to Discord URL:', url.toString());
   res.redirect(url.toString());
 });
 
