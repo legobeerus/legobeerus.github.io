@@ -4,7 +4,12 @@ const cors = require('cors');
 const path = require('path');
 const fetch = global.fetch || require('node-fetch');
 const bodyParser = require('body-parser');
-require('dotenv').config();
+// dotenv is optional in some deployment setups; try to load if available
+try{
+  require('dotenv').config();
+}catch(e){
+  console.warn('dotenv not available; continuing without loading .env file');
+}
 
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
@@ -54,6 +59,25 @@ app.use(express.static(siteRoot));
 // Log useful startup info
 console.log('Serving static site from', siteRoot);
 console.log('Configured BASE_URL:', BASE_URL);
+
+// Provide a small dynamic config JS so clients always get correct AUTH_SERVER value
+app.get('/scripts/server-config.js', (req, res)=>{
+  res.type('application/javascript');
+  const js = `window.__AUTH_SERVER__ = '${BASE_URL}';`;
+  console.log('Serving dynamic /scripts/server-config.js ->', BASE_URL);
+  res.send(js);
+});
+
+// Ensure /scripts/auth.js is served from the static site root if present
+app.get('/scripts/auth.js', (req, res, next)=>{
+  const p = path.join(siteRoot, 'scripts', 'auth.js');
+  if(require('fs').existsSync(p)){
+    console.log('Serving static scripts/auth.js from', p);
+    return res.sendFile(p);
+  }
+  console.log('scripts/auth.js not found at', p);
+  next();
+});
 
 // Serve index.html explicitly for root
 app.get('/', (req, res)=>{
