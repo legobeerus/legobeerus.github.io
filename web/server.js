@@ -25,7 +25,42 @@ app.use(bodyParser.json());
 
 // Configure cookie security based on BASE_URL protocol
 const isSecure = (BASE_URL||'').startsWith('https');
+
+// Try to use Postgres-backed session store when DATABASE_URL is provided (Railway)
+const DATABASE_URL = process.env.DATABASE_URL || "postgresql://postgres:qSqlBEBelbTrColIMGzrUXfAYcJFYqEu@postgres.railway.internal:5432/railway";
+let pgPool = null;
+let sessionStore = null;
+if(DATABASE_URL){
+  try{
+    const PgStore = require('connect-pg-simple')(session);
+    const { Pool } = require('pg');
+    pgPool = new Pool({ connectionString: DATABASE_URL });
+    sessionStore = new PgStore({ pool: pgPool, tableName: 'session', createTableIfMissing: true });
+    console.log('Using Postgres session store (DATABASE_URL)');
+    // ensure a simple users table exists for optional user persistence
+    pgPool.query(`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT, discriminator TEXT, avatar TEXT, updated_at TIMESTAMP DEFAULT NOW())`).catch(e=>{ console.warn('users table check failed', e && e.message) });
+  }catch(e){
+    console.warn('Postgres session store not available:', e && e.message);
+    pgPool = null; sessionStore = null;
+  }
+}
+
+// If we have a pgPool, periodically ping it to keep the connection alive
+const DB_PING_INTERVAL_MS = Number(process.env.DB_PING_INTERVAL_MS) || 120000; // default 2 minutes
+let dbPingInterval = null;
+if(pgPool){
+  dbPingInterval = setInterval(async ()=>{
+    try{
+      await pgPool.query('SELECT 1');
+      console.log('DB ping OK');
+    }catch(err){
+      console.warn('DB ping failed', err && err.message);
+    }
+  }, DB_PING_INTERVAL_MS);
+}
+
 app.use(session({
+  store: sessionStore || undefined,
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
@@ -149,6 +184,16 @@ app.get('/oauth/discord/callback', async (req, res)=>{
     req.session.accessToken = accessToken; // kept only in session
 
     console.log('/oauth/discord/callback - logged in user', req.session.user.id, req.session.user.username);
+
+    // Persist minimal user record when using Postgres so logins survive deployments
+    if(pgPool){
+      try{
+        await pgPool.query(
+          `INSERT INTO users (id, username, discriminator, avatar, updated_at) VALUES ($1,$2,$3,$4,NOW()) ON CONFLICT (id) DO UPDATE SET username=EXCLUDED.username, discriminator=EXCLUDED.discriminator, avatar=EXCLUDED.avatar, updated_at=NOW()`,
+          [userData.id, userData.username, userData.discriminator, userData.avatar]
+        );
+      }catch(e){ console.warn('Failed to upsert user record', e && e.message); }
+    }
 
     let next = req.session.next || '/';
     delete req.session.next;
