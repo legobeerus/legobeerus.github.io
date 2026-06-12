@@ -149,3 +149,19 @@ a:hover,a:focus,a:active{color:var(--accent);text-decoration:none}
 .card:hover{transform:none;box-shadow:0 10px 30px rgba(0,0,0,0.55)}
 .hero h1, .card, .character{animation:fadeUp .6s ease both}
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+/* Grading page styles */
+.grading .question{background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));padding:16px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);margin:10px 0}
+.grading .qmeta{font-size:.95rem;color:var(--muted);margin-bottom:6px}
+.grading .prompt,.grading .answer{margin:6px 0;color:var(--fg)}
+.grading textarea{width:100%;min-height:120px;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:var(--fg)}
+.grading input[type=number]{width:120px;padding:8px;border-radius:6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:var(--fg)}
+.grading .actions{margin-top:16px;display:flex;gap:8px}
+.grading .notice{color:#ff6b6b;margin:8px 0}
+.grading #previewArea pre{background:rgba(255,255,255,0.03);padding:12px;border-radius:8px;color:var(--fg)}
+.grading #questions{margin-top:12px}
+
+@media (max-width:700px){
+  .grading input[type=number]{width:100%}
+  .grading .actions{flex-direction:column}
+}

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Grading — Exam Review</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header class="nav">
+    <div class="container nav-inner">
+      <a class="brand" href="index.html">
+        <img src="media/logo.png" alt="AgentOS logo" class="logo" />
+        <span>AgentOS</span>
+      </a>
+      <nav class="nav-links">
+        <a href="features.html">Features</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="terms.html">Terms</a>
+      </nav>
+      <div class="nav-cta">
+        <a class="btn btn-primary" href="https://discord.com/oauth2/authorize?client_id=1433761317038198874&permissions=4503979732028416&integration_type=0&scope=applications.commands+bot">Invite</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="container content grading">
+      <h2>Exam Grading</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px">
+        <div id="sessionLabel">Session: —</div>
+        <div id="reviewer">Not signed in</div>
+      </div>
+
+      <div id="sessionNotFound" class="notice" style="display:none">Session not found.</div>
+
+      <form id="gradeForm">
+        <div id="questions"></div>
+
+        <label for="feedback">Feedback (DM preview):</label>
+        <textarea id="feedback" name="feedback"></textarea>
+
+        <div class="actions">
+          <button type="button" id="previewBtn" class="btn btn-ghost">Preview DM</button>
+          <button type="submit" class="btn btn-primary">Submit Grades</button>
+        </div>
+      </form>
+
+      <div id="previewArea" style="display:none;margin-top:16px">
+        <h3>DM Preview</h3>
+        <pre id="previewText"></pre>
+      </div>
+
+      <div id="result" style="margin-top:16px"></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div class="brand-sm">
+        <img src="media/logo.png" alt="AgentOS" />
+        <span>AgentOS</span>
+      </div>
+      <nav class="footer-links">
+        <a href="privacy.html">Privacy Policy</a>
+        <a href="terms.html">Terms of Service</a>
+      </nav>
+      <p class="copyright">© <span id="year"></span> AgentOS</p>
+    </div>
+  </footer>
+
+  <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+  <script src="scripts/auth.js"></script>
+  <script src="scripts/grade.js"></script>
+</body>
+</html>

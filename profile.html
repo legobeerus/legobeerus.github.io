@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Profile — AgentOS</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="nav">
+    <div class="container nav-inner">
+      <a class="brand" href="index.html">
+        <img src="media/logo.png" alt="AgentOS logo" class="logo" />
+        <span>AgentOS</span>
+      </a>
+      <nav class="nav-links">
+        <a href="features.html">Features</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="terms.html">Terms</a>
+      </nav>
+      <div class="nav-cta"></div>
+    </div>
+  </header>
+
+  <main class="container content">
+    <h1>Your profile</h1>
+    <p>This page is a placeholder for the profile view.</p>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div class="brand-sm">
+        <img src="media/logo.png" alt="AgentOS" />
+        <span>AgentOS</span>
+      </div>
+      <nav class="footer-links">
+        <a href="privacy.html">Privacy Policy</a>
+        <a href="terms.html">Terms of Service</a>
+      </nav>
+      <p class="copyright">© <span id="year-profile"></span> AgentOS</p>
+    </div>
+  </footer>
+  <script>document.getElementById('year-profile').textContent=new Date().getFullYear();</script>
+  <script src="scripts/auth.js"></script>
+</body>
+</html>
