@@ -1,7 +1,10 @@
 (function(){
+  // server origin can be set via window.__AUTH_SERVER__ (eg: https://your-app.up.railway.app)
+  const AUTH_SERVER = (window && window.__AUTH_SERVER__) || window.location.origin
+
   async function getUser(){
     try{
-      const r = await fetch('/api/me',{credentials:'same-origin'})
+      const r = await fetch(`${AUTH_SERVER}/api/me`,{credentials:'include'})
       if(!r.ok) return null
       return await r.json()
     }catch(e){return null}
@@ -90,7 +93,7 @@
   function createLoginButton(){
     const a = document.createElement('a')
     a.className = 'btn btn-primary'
-    a.href = '/auth/discord'
+    a.href = `${AUTH_SERVER}/auth/discord`
     a.textContent = 'Login'
     return a
   }
