@@ -105,14 +105,6 @@ app.get('/', (req, res)=>{
   res.sendFile(path.join(siteRoot, 'index.html'));
 });
 
-// Fallback: serve index.html for any other unmatched GET (SPA-style)
-app.get('*', (req, res, next) => {
-  if (req.method !== 'GET') return next();
-  const filePath = path.join(siteRoot, req.path);
-  // if the file exists, let static middleware handle it
-  res.sendFile(path.join(siteRoot, 'index.html'));
-});
-
 // OAuth start
 app.get('/auth/discord', (req, res)=>{
   const next = req.query.next || '/';
@@ -183,6 +175,15 @@ app.get('/logout', (req, res)=>{
   req.session.destroy(()=>{
     res.redirect('/');
   });
+});
+
+// Fallback: serve index.html for any other unmatched GET (SPA-style)
+app.get('*', (req, res, next) => {
+  if (req.method !== 'GET') return next();
+  // do not handle API or auth routes here
+  const skipPrefixes = ['/api', '/auth', '/oauth', '/scripts', '/__filelist'];
+  for(const p of skipPrefixes) if(req.path.startsWith(p)) return next();
+  res.sendFile(path.join(siteRoot, 'index.html'));
 });
 
 const port = process.env.PORT || 3000;
