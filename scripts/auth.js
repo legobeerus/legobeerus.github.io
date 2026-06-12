@@ -74,7 +74,7 @@
     profile.style.textDecoration='none'
 
     const signout = document.createElement('a')
-    signout.href = '/logout'
+    signout.href = `${AUTH_SERVER}/logout`
     signout.textContent = 'Sign out'
     signout.className = 'btn'
     signout.style.display='block'
@@ -93,7 +93,7 @@
   function createLoginButton(){
     const a = document.createElement('a')
     a.className = 'btn btn-primary'
-    a.href = `${AUTH_SERVER}/auth/discord`
+    a.href = `${AUTH_SERVER}/auth/discord?next=${encodeURIComponent(window.location.href)}`
     a.textContent = 'Login'
     return a
   }

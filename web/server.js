@@ -39,6 +39,23 @@ try{
 const siteRoot = path.join(__dirname, '..', 'legobeerus.github.io');
 app.use(express.static(siteRoot));
 
+// Log useful startup info
+console.log('Serving static site from', siteRoot);
+console.log('Configured BASE_URL:', BASE_URL);
+
+// Serve index.html explicitly for root
+app.get('/', (req, res)=>{
+  res.sendFile(path.join(siteRoot, 'index.html'));
+});
+
+// Fallback: serve index.html for any other unmatched GET (SPA-style)
+app.get('*', (req, res, next) => {
+  if (req.method !== 'GET') return next();
+  const filePath = path.join(siteRoot, req.path);
+  // if the file exists, let static middleware handle it
+  res.sendFile(path.join(siteRoot, 'index.html'));
+});
+
 // OAuth start
 app.get('/auth/discord', (req, res)=>{
   const next = req.query.next || '/';
