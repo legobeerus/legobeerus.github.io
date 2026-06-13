@@ -1,5 +1,6 @@
 (function(){
   function byId(id){return document.getElementById(id)}
+  const AUTH_SERVER = (window && window.__AUTH_SERVER__) || window.location.origin
   const params = new URLSearchParams(location.search)
   const sessionId = params.get('session') || ''
   const reviewerEl = byId('reviewer')
@@ -43,9 +44,9 @@
 
   async function fetchExam(){
     try{
-      const resp = await fetch(`/api/exams/${encodeURIComponent(sessionId)}`)
+      const resp = await fetch(`${AUTH_SERVER}/api/exams/${encodeURIComponent(sessionId)}`, { credentials: 'include' })
       if(resp.status===404){ document.getElementById('sessionNotFound').style.display='block'; return }
-      if(resp.status===401||resp.status===403){ location.href = '/auth/discord?next='+encodeURIComponent(location.href); return }
+      if(resp.status===401||resp.status===403){ location.href = `${AUTH_SERVER}/auth/discord?next=${encodeURIComponent(location.pathname+location.search)}`; return }
       const data = await resp.json()
       renderExam(data)
     }catch(e){ console.error(e); resultEl.textContent = 'Failed to load exam.' }
@@ -79,8 +80,8 @@
     try{ scores = collectScores() }catch(e){ return }
     const feedback = byId('feedback').value || ''
     try{
-      const resp = await fetch(`/api/exams/${encodeURIComponent(sessionId)}/grade`,{
-        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scores,feedback})
+      const resp = await fetch(`${AUTH_SERVER}/api/exams/${encodeURIComponent(sessionId)}/grade`,{
+        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scores,feedback}), credentials: 'include'
       })
       const data = await resp.json()
       if(!resp.ok){ resultEl.textContent = `Error: ${data.message || resp.status}`; return }

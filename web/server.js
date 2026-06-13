@@ -223,11 +223,40 @@ app.get('/logout', (req, res)=>{
 });
 
 // Proxy: fetch an exam's completed responses from the bot
+// List exams (from DB)
+app.get('/api/exams', async (req, res)=>{
+  if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
+  if(!pgPool) return res.status(500).json({ error: 'server not configured to read DB' });
+  const phase = req.query.phase ? Number(req.query.phase) : null;
+  const status = req.query.status || null;
+  const conditions = [];
+  const params = [];
+  let idx = 1;
+  if(phase!=null){ conditions.push(`phase = $${idx++}`); params.push(phase) }
+  if(status){ conditions.push(`status = $${idx++}`); params.push(status) }
+  const where = conditions.length ? ('WHERE ' + conditions.join(' AND ')) : '';
+  const sql = `SELECT id, phase, status, candidate_mention, created_at FROM exams ${where} ORDER BY created_at DESC LIMIT 200`;
+  try{
+    const q = await pgPool.query(sql, params);
+    return res.json(q.rows || []);
+  }catch(e){ console.error('DB list exams failed', e && e.message); return res.status(502).json({ error: 'db_error' }); }
+});
+
+
+// Fetch single exam: prefer DB row, fallback to bot
 app.get('/api/exams/:id', async (req, res)=>{
   if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
+  const examId = req.params.id;
+  if(pgPool){
+    try{
+      const q = await pgPool.query('SELECT * FROM exams WHERE id = $1 LIMIT 1', [examId]);
+      if(q.rowCount>0){ return res.json(q.rows[0]) }
+    }catch(e){ console.warn('DB fetch exam failed', e && e.message) }
+  }
+  // fallback to bot proxy
   const botBase = process.env.BOT_BASE_URL;
   if(!botBase) return res.status(500).json({ error: 'BOT_BASE_URL not configured on server' });
-  const url = `${botBase.replace(/\/$/,'')}/exams/${encodeURIComponent(req.params.id)}`;
+  const url = `${botBase.replace(/\/$/,'')}/exams/${encodeURIComponent(examId)}`;
   console.log('Proxy GET to bot:', url, 'for user', req.session.user.id);
   try{
     const bresp = await fetch(url, { headers: { 'x-discord-token': req.session.accessToken, 'accept':'application/json' } });
@@ -257,6 +286,12 @@ app.post('/api/exams/:id/grade', async (req, res)=>{
     let data = null;
     try{ data = txt ? JSON.parse(txt) : null }catch(e){ data = txt }
     if(!bresp.ok){ console.log('Bot POST returned', bresp.status, txt); }
+    // persist grades to DB when available
+    if(bresp.ok && pgPool){
+      try{
+        await pgPool.query('UPDATE exams SET grades = $1, status = $2, graded_by = $3, graded_at = NOW() WHERE id = $4', [JSON.stringify(payload), 'graded', req.session.user.id, req.params.id]);
+      }catch(e){ console.warn('Failed to persist grades to DB', e && e.message) }
+    }
     return res.status(bresp.status).json(data);
   }catch(err){ console.error('proxy POST error', err); return res.status(502).json({ error: 'bad_gateway' }); }
 });
