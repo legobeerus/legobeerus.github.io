@@ -326,18 +326,6 @@ function startApp(){
     data.examId = payload.examId || payload.exam_id || payload.exam || examId || 'unknown';
     data.phase = payload.phase || (typeof data.examId === 'string' && data.examId.match(/phase\d+/i)?.[0]) || null;
 
-    const getPrompt = (prompt, idx) => {
-      if(typeof prompt === 'string') return prompt;
-      if(!prompt || typeof prompt !== 'object') return `Question ${idx+1}`;
-      return prompt.prompt || prompt.question || prompt.text || prompt.label || `Question ${idx+1}`;
-    };
-    const getAnswer = (answer) => {
-      if(typeof answer === 'string') return answer;
-      if(!answer || typeof answer !== 'object') return '';
-      return answer.answer || answer.response || answer.value || answer.text || '';
-    };
-
-    const questions = [];
     const toArray = value => {
       if(Array.isArray(value)) return value;
       if(value && typeof value === 'object'){
@@ -347,37 +335,41 @@ function startApp(){
       }
       return null;
     };
-    const prompts = toArray(payload.questions);
-    const answers = toArray(payload.answers);
-    const responses = toArray(payload.responses);
 
-    if(prompts && answers){
-      const answerMap = new Map();
-      answers.forEach((item, idx)=>{
-        const index = item && typeof item === 'object' ? (item.index ?? item.questionIndex ?? item.question_id ?? idx) : idx;
-        answerMap.set(index, getAnswer(item));
+    const normalizeIndex = raw => {
+      const index = typeof raw === 'number' ? raw : raw == null ? null : Number(raw);
+      return Number.isInteger(index) ? index : null;
+    };
+
+    const rawQuestions = toArray(payload.questions);
+    const rawAnswers = toArray(payload.answers) || toArray(payload.responses);
+
+    if(rawQuestions){
+      data.questions = rawQuestions.map((item, idx) => {
+        if(typeof item === 'string') return { text: item };
+        return item && typeof item === 'object' ? item : { text: `Question ${idx+1}` };
       });
-      prompts.forEach((prompt, idx)=>{
-        questions.push({ prompt: getPrompt(prompt, idx), answer: answerMap.has(idx) ? answerMap.get(idx) : '' });
-      });
-    } else if(prompts){
-      prompts.forEach((prompt, idx)=>{
-        const answerObj = answers && answers.find(a=>a.index === idx || a.questionIndex === idx || a.question_id === idx);
-        questions.push({ prompt: getPrompt(prompt, idx), answer: getAnswer(answerObj) });
-      });
-    } else if(answers){
-      answers.forEach((item, idx)=>{
-        const promptSource = item && typeof item === 'object' ? (item.prompt || item.question || item.text) : null;
-        const prompt = promptSource || (Array.isArray(payload.questions) && payload.questions[item && typeof item === 'object' ? (item.index ?? idx) : idx]) || `Question ${idx+1}`;
-        questions.push({ prompt: getPrompt(prompt, idx), answer: getAnswer(item) });
-      });
-    } else if(responses){
-      responses.forEach((item, idx)=>{
-        questions.push({ prompt: getPrompt(item, idx), answer: getAnswer(item) });
-      });
+    } else {
+      data.questions = [];
     }
 
-    data.questions = questions;
+    if(rawAnswers){
+      data.answers = rawAnswers.map((item, idx) => {
+        if(typeof item === 'string') return { index: idx, answer: item };
+        if(item && typeof item === 'object'){
+          const index = normalizeIndex(item.index ?? item.questionIndex ?? item.question_id ?? idx);
+          return {
+            ...item,
+            index: index == null ? idx : index,
+            answer: item.answer ?? item.response ?? item.value ?? item.text ?? ''
+          };
+        }
+        return { index: idx, answer: '' };
+      });
+    } else {
+      data.answers = [];
+    }
+
     return data;
   }
 

@@ -26,7 +26,7 @@
 
     const answersByIndex = new Map((data.answers || []).map(a => [a.index, a.answer]))
     exam.answersByIndex = answersByIndex
-    const totalPossible = (data.questions || []).reduce((sum,q)=>sum + (Number(q.maxScore ?? 0) || 0), 0)
+    const totalPossible = (data.questions || []).reduce((sum,q)=>sum + (Number(q.maxScore ?? 1) || 1), 0)
     exam.maxScore = totalPossible
     byId('totalPossible').textContent = `Total possible: ${totalPossible}`
 
@@ -37,10 +37,14 @@
 
     questionsEl.innerHTML = ''
     data.questions.forEach((q, idx)=>{
-      const maxScore = Number(q.maxScore ?? 0) || 0
-      const isMC = q.type === 'multiplechoice'
-      const isText = !q.type || q.type === 'text'
+      const maxScore = Number(q.maxScore ?? 1) || 1
+      const kind = String(q.type || '').toLowerCase().trim()
+      const isMC = kind === 'multiplechoice' || kind === 'multiple-choice' || kind === 'mc'
+      const isText = kind === '' || kind === 'text'
       const answerValue = answersByIndex.get(idx) ?? ''
+      const answerNormalized = String(answerValue || '').trim()
+      const correctAnswerRaw = q.correctAnswer || q.correct_answer || ''
+      const correctNormalized = String(correctAnswerRaw || '').trim()
       const div = document.createElement('div')
       div.className = 'question'
 
@@ -53,26 +57,28 @@
 
       let choicesHtml = ''
       if(isMC && Array.isArray(q.choices)){
-        const correctAnswer = q.correctAnswer || q.correct_answer
         choicesHtml = `<div class="choices"><strong>Choices:</strong><ul>`
         q.choices.forEach(choice=>{
-          const choiceValue = typeof choice === 'string' ? choice : choice.value ?? choice.label ?? choice.text ?? ''
+          const rawChoice = typeof choice === 'string' ? choice : choice.value ?? choice.label ?? choice.text ?? ''
           const label = typeof choice === 'string' ? choice : choice.label || choice.text || choice.value || ''
-          const isSelected = answerValue != null && String(choiceValue) === String(answerValue)
-          const isCorrect = correctAnswer != null && String(choiceValue) === String(correctAnswer)
+          const choiceNormalized = String(rawChoice || '').trim()
+          const choiceKey = String(choiceNormalized.split(/\)|\.|\s/)[0]) || ''
+          const isSelected = answerNormalized !== '' && (answerNormalized === choiceNormalized || answerNormalized === choiceKey)
+          const isCorrect = correctNormalized !== '' && (choiceNormalized === correctNormalized || choiceKey === correctNormalized)
           const icon = isSelected ? (isCorrect ? '✅' : '❌') : '▫️'
           choicesHtml += `<li style="margin:4px 0">${icon} ${escapeHtml(label)}</li>`
         })
         choicesHtml += '</ul></div>'
       }
 
-      const isCorrectAnswer = isMC && String(answerValue) === String(q.correctAnswer || q.correct_answer)
+      const isCorrectAnswer = isMC && answerNormalized !== '' && (answerNormalized === correctNormalized || answerNormalized === String(correctAnswerRaw).trim())
       const mcStatus = isMC
         ? `<div class="mc-result">${isCorrectAnswer ? 'Correct' : 'Incorrect'}</div>`
         : ''
 
       if(isMC){
         q._autoScore = isCorrectAnswer ? maxScore : 0
+        scoreInput = `<div class="mc-score">Auto-graded MC question (max ${maxScore}) — Awarded ${q._autoScore}</div>`
       }
 
       div.innerHTML = `<div class="qmeta">Q${idx+1} (max ${maxScore})</div>
