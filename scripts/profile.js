@@ -32,10 +32,48 @@
       container.appendChild(empty)
       return
     }
+
+    function normalizeColor(value){
+      if(value == null) return null
+      if(typeof value === 'number' && Number.isFinite(value)){
+        if(value <= 0) return null
+        return `#${value.toString(16).padStart(6, '0').slice(-6)}`
+      }
+      const text = String(value).trim()
+      if(!text) return null
+      if(/^0x[0-9a-f]{6}$/i.test(text)) return `#${text.slice(2)}`
+      if(/^#?[0-9a-f]{6}$/i.test(text)) return text.startsWith('#') ? text : `#${text}`
+      if(/^\d+$/.test(text)){
+        const n = Number(text)
+        if(Number.isFinite(n) && n > 0) return `#${n.toString(16).padStart(6, '0').slice(-6)}`
+      }
+      return null
+    }
+
+    function hexToRgb(hex){
+      const clean = String(hex || '').replace('#', '')
+      if(!/^[0-9a-f]{6}$/i.test(clean)) return null
+      return {
+        r: Number.parseInt(clean.slice(0,2), 16),
+        g: Number.parseInt(clean.slice(2,4), 16),
+        b: Number.parseInt(clean.slice(4,6), 16)
+      }
+    }
+
     items.forEach(item=>{
       const chip = document.createElement('span')
       chip.className = 'profile-chip'
-      chip.textContent = item
+      const roleName = typeof item === 'string' ? item : (item && item.name) || (item && item.id) || ''
+      if(!roleName) return
+      chip.textContent = roleName
+
+      const roleColor = normalizeColor(item && typeof item === 'object' ? item.color : null)
+      const rgb = roleColor ? hexToRgb(roleColor) : null
+      if(rgb){
+        chip.style.color = roleColor
+        chip.style.borderColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.38)`
+        chip.style.background = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.14)`
+      }
       container.appendChild(chip)
     })
   }

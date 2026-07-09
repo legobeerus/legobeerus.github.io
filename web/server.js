@@ -342,7 +342,7 @@ function startApp(){
       lookupOk: roleLookup.ok,
       lookupStatus: roleLookup.status
     });
-    if(!pgPool) return res.json({ user: req.session.user, stats: null, recentSubmissions: [], roles: guildRoles.map(role => role.name).filter(Boolean) });
+    if(!pgPool) return res.json({ user: req.session.user, stats: null, recentSubmissions: [], roles: guildRoles.filter(role => role && role.name) });
     try{
       const user = req.session.user;
       const statsRes = await pgPool.query(`
@@ -377,7 +377,7 @@ function startApp(){
           phase1Submissions: Number(stats.phase1_submissions || 0),
           phase4Submissions: Number(stats.phase4_submissions || 0)
         },
-        roles: guildRoles.map(role => role.name).filter(Boolean),
+        roles: guildRoles.filter(role => role && role.name),
         recentSubmissions: recentRes.rows || []
       });
     }catch(e){
@@ -491,16 +491,48 @@ function startApp(){
 
   function roleEntriesFromPayload(payload){
     const results = [];
-    const seen = new Set();
+    const roleIndex = new Map();
 
-    const addRole = (id, name)=>{
+    const normalizeRoleColor = value=>{
+      if(value == null) return null;
+      if(typeof value === 'number' && Number.isFinite(value)){
+        if(value <= 0) return null;
+        const hex = value.toString(16).padStart(6, '0').slice(-6);
+        return `#${hex}`;
+      }
+      const text = String(value).trim();
+      if(!text) return null;
+      if(/^0x[0-9a-f]{6}$/i.test(text)) return `#${text.slice(2)}`;
+      if(/^#?[0-9a-f]{6}$/i.test(text)) return text.startsWith('#') ? text : `#${text}`;
+      if(/^\d+$/.test(text)){
+        const num = Number(text);
+        if(Number.isFinite(num) && num > 0){
+          const hex = num.toString(16).padStart(6, '0').slice(-6);
+          return `#${hex}`;
+        }
+      }
+      return null;
+    };
+
+    const addRole = (id, name, color)=>{
       const cleanId = id != null ? String(id).trim() : '';
       const cleanName = name != null ? String(name).trim() : '';
-      if(!cleanId && !cleanName) return;
-      const key = `${cleanId}::${cleanName}`;
-      if(seen.has(key)) return;
-      seen.add(key);
-      results.push({ id: cleanId || cleanName, name: cleanName || cleanId });
+      const cleanColor = normalizeRoleColor(color);
+      const key = cleanId || cleanName;
+      if(!key) return;
+
+      const existingIndex = roleIndex.get(key);
+      if(existingIndex != null){
+        const existing = results[existingIndex];
+        if(!existing.name && cleanName) existing.name = cleanName;
+        if(!existing.color && cleanColor) existing.color = cleanColor;
+        return;
+      }
+
+      const entry = { id: cleanId || cleanName, name: cleanName || cleanId };
+      if(cleanColor) entry.color = cleanColor;
+      roleIndex.set(key, results.length);
+      results.push(entry);
     };
 
     const collect = (value, fromRoleContainer=false)=>{
@@ -517,11 +549,13 @@ function startApp(){
       if(typeof value === 'object'){
         const id = value.id ?? value.roleId ?? value.role_id ?? value.value ?? value.discordRoleId ?? null;
         const name = value.name ?? value.roleName ?? value.label ?? value.title ?? value.displayName ?? value.text ?? null;
-        if(id || name) addRole(id, name);
-        if(fromRoleContainer){
+        const color = value.color ?? value.hexColor ?? value.colorHex ?? value.colour ?? value.roleColor ?? value.role_colour ?? value.rgb ?? null;
+        if(id || name) addRole(id, name, color);
+        // Support map-style role containers only when keys look like Discord IDs and values are names.
+        if(fromRoleContainer && !id && !name){
           for(const [k, v] of Object.entries(value)){
             if(v == null) continue;
-            if(typeof v === 'string' || typeof v === 'number'){
+            if(typeof v === 'string' && /^\d{16,22}$/.test(String(k).trim())){
               const key = String(k).trim();
               const val = String(v).trim();
               if(key && val) addRole(key, val);
@@ -531,16 +565,26 @@ function startApp(){
       }
     };
 
-    collect(payload && payload.roles, true);
-    collect(payload && payload.roleIds, true);
-    collect(payload && payload.memberRoles, true);
-    collect(payload && payload.guildRoles, true);
-    collect(payload && payload.userRoles, true);
-    collect(payload && payload.memberRoleIds, true);
-    collect(payload && payload && payload.member && payload.member.roles, true);
-    collect(payload && payload && payload.member && payload.member.roleIds, true);
-    collect(payload && payload && payload.data && payload.data.roles, true);
-    collect(payload && payload && payload.data && payload.data.member && payload.data.member.roles, true);
+    const memberFirst = [];
+    const fallback = [];
+    const pushIfPresent = (arr, value)=>{ if(value) arr.push(value); };
+
+    pushIfPresent(memberFirst, payload && payload.memberRoles);
+    pushIfPresent(memberFirst, payload && payload.memberRoleIds);
+    pushIfPresent(memberFirst, payload && payload.roleIds);
+    pushIfPresent(memberFirst, payload && payload.member && payload.member.roles);
+    pushIfPresent(memberFirst, payload && payload.member && payload.member.roleIds);
+    pushIfPresent(memberFirst, payload && payload.data && payload.data.member && payload.data.member.roles);
+
+    pushIfPresent(fallback, payload && payload.roles);
+    pushIfPresent(fallback, payload && payload.userRoles);
+    pushIfPresent(fallback, payload && payload.data && payload.data.roles);
+    pushIfPresent(fallback, payload && payload.guildRoles);
+
+    memberFirst.forEach(value=>collect(value, true));
+    if(results.length === 0){
+      fallback.forEach(value=>collect(value, true));
+    }
 
     return results;
   }
@@ -566,6 +610,8 @@ function startApp(){
     const url = BOT_GUILD_ID
       ? `${base}/api/guilds/${encodeURIComponent(BOT_GUILD_ID)}/members/${encodeURIComponent(userId)}/roles`
       : `${base}/api/guild-members/${encodeURIComponent(userId)}/roles`;
+
+    console.log('Role lookup request', { userId, url, hasGuildId: Boolean(BOT_GUILD_ID) });
 
     const response = await fetch(url, {
       headers: {
