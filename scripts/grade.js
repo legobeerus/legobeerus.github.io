@@ -24,6 +24,10 @@
     const candidate = data.candidateMention || data.candidate_name || data.userId || (data.user && data.user.username) || 'unknown'
     sessionLabel.textContent = `Session: ${data.examId || data.id || sessionId} — Candidate: ${candidate}`
 
+    const totalPossible = (data.questions || []).reduce((sum,q)=>sum + (Number(q.maxScore) || 1), 0)
+    exam.maxScore = totalPossible
+    byId('totalPossible').textContent = `Total possible: ${totalPossible}`
+
     if(!data.questions || data.questions.length===0){
       questionsEl.innerHTML = '<p>No questions found for this session.</p>'
       return
@@ -31,12 +35,43 @@
 
     questionsEl.innerHTML = ''
     data.questions.forEach((q, idx)=>{
+      const maxScore = Number(q.maxScore) || 1
+      const isMC = q.type === 'multiplechoice'
+      const isText = !q.type || q.type === 'text'
       const div = document.createElement('div')
       div.className = 'question'
-      div.innerHTML = `<div class="qmeta">Q${idx+1}</div>
+
+      let scoreInput = ''
+      if(isText){
+        scoreInput = `<label>Score: <input type="number" min="0" max="${maxScore}" step="1" name="score" data-index="${idx}" value="0"></label>`
+      } else if(isMC){
+        scoreInput = `<div class="mc-score">Auto-graded MC question (max ${maxScore})</div>`
+      }
+
+      let choicesHtml = ''
+      if(isMC && Array.isArray(q.choices)){
+        const selected = q.answer || q.selected
+        const correctAnswer = q.correctAnswer || q.correct_answer
+        choicesHtml = `<div class="choices"><strong>Choices:</strong><ul>`
+        q.choices.forEach(choice=>{
+          let label = typeof choice === 'string' ? choice : choice.label || choice.text || choice.value || ''
+          let choiceValue = typeof choice === 'string' ? choice : choice.value || choice.label || choice.text || ''
+          const isSelected = selected != null && String(choiceValue) === String(selected)
+          const isCorrect = choice.correct === true || (correctAnswer != null && String(choiceValue) === String(correctAnswer))
+          const icon = isSelected ? (isCorrect ? '✅' : '❌') : '▫️'
+          choicesHtml += `<li style="margin:4px 0">${icon} ${escapeHtml(label)}</li>`
+        })
+        choicesHtml += '</ul></div>'
+      }
+
+      const correctness = isMC ? `<div class="mc-result">${q.correct === true || q.isCorrect === true || (q.answer != null && (q.answer === q.correctAnswer || q.answer === q.correct_answer)) ? 'Correct' : 'Incorrect'}</div>` : ''
+
+      div.innerHTML = `<div class="qmeta">Q${idx+1} (max ${maxScore})</div>
         <div class="prompt"><strong>Question:</strong> ${escapeHtml(q.prompt || q.question || '')}</div>
         <div class="answer"><strong>Answer:</strong> ${escapeHtml(q.answer || q.response || '')}</div>
-        <label>Score: <input type="number" min="0" step="1" name="score" data-index="${idx}" value="0"></label>`
+        ${choicesHtml}
+        ${correctness}
+        ${scoreInput}`
       questionsEl.appendChild(div)
     })
   }
@@ -57,22 +92,25 @@
     const scores = collectScores()
     if(!scores) return
     const feedback = byId('feedback').value || ''
-    const total = scores.reduce((a,b)=>a+b,0)
+    const total = scores.reduce((a,b)=>a + (b == null ? 0 : b),0)
     const percent = exam && exam.maxScore ? Math.round(total / exam.maxScore * 100) : '—'
-    previewText.textContent = `Scores: ${scores.join(', ')}\nTotal: ${total}\nPercent: ${percent}\n\nFeedback:\n${feedback}`
+    previewText.textContent = `Scores: ${scores.map(s=>s==null?'null':s).join(', ')}\nTotal: ${total}\nPercent: ${percent}\n\nFeedback:\n${feedback}`
     previewArea.style.display='block'
   })
 
   function collectScores(){
-    const inputs = Array.from(questionsEl.querySelectorAll('input[name=score]'))
     if(!exam) return null
-    const scores = inputs.map(i=>{
-      const v = Number(i.value)
-      if(Number.isNaN(v) || v<0){ i.focus(); resultEl.textContent='Invalid score value'; throw new Error('invalid') }
+    return exam.questions.map((q, idx) => {
+      const isMC = q.type === 'multiplechoice'
+      if(isMC) return null
+      const input = questionsEl.querySelector(`input[name=score][data-index="${idx}"]`)
+      if(!input){ resultEl.textContent='Missing score input'; throw new Error('invalid') }
+      const v = Number(input.value)
+      if(Number.isNaN(v) || v < 0){ input.focus(); resultEl.textContent='Invalid score value'; throw new Error('invalid') }
+      const maxScore = Number(q.maxScore) || 1
+      if(v > maxScore){ input.focus(); resultEl.textContent=`Score cannot exceed max ${maxScore}`; throw new Error('invalid') }
       return v
     })
-    if(scores.length !== exam.questions.length){ resultEl.textContent='Score count mismatch'; return null }
-    return scores
   }
 
   form.addEventListener('submit', async (ev)=>{
@@ -82,7 +120,7 @@
     const feedback = byId('feedback').value || ''
     try{
       const resp = await fetch(`${AUTH_SERVER}/api/exams/${encodeURIComponent(sessionId)}/grade`,{
-        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({grades: scores, feedback}), credentials: 'include'
+        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scores, feedback}), credentials: 'include'
       })
       const text = await resp.text()
       let data
