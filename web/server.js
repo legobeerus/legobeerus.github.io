@@ -19,6 +19,7 @@ const BOT_BASE_URL = process.env.BOT_BASE_URL || '';
 const BOT_API_TOKEN = process.env.BOT_API_TOKEN || process.env.DISCORD_BOT_TOKEN || '';
 const BOT_GUILD_ID = process.env.BOT_GUILD_ID || process.env.GUILD_ID || process.env.BOT_API_DEFAULT_GUILD_ID || '';
 const LOCAL_ALLOWED_ROLE_IDS = new Set(String(process.env.ALLOWED_ROLE_IDS || '').split(',').map(value => value.trim()).filter(Boolean));
+const REVIEW_LOCK_WINDOW_SECONDS = Number(process.env.REVIEW_LOCK_WINDOW_SECONDS || 120);
 
 if(!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET){
   console.warn('Warning: DISCORD_CLIENT_ID or DISCORD_CLIENT_SECRET not set. OAuth will not work until configured.');
@@ -42,6 +43,7 @@ let hasExamSessionsTable = false;
 let examReviewsColumns = new Set();
 let examReviewsMeta = {}; // column_name -> { is_nullable, column_default }
 let hasSubmissionEventsTable = false;
+let hasReviewLocksTable = false;
 if(!envDatabaseUrl){
   console.warn('DATABASE_URL not set in environment; Postgres support is disabled.');
 } else {
@@ -79,6 +81,12 @@ if(!envDatabaseUrl){
         passed BOOLEAN,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )`).catch(e=>{ console.warn('exam_submission_events table check failed', e && e.message) });
+      pgPool.query(`CREATE TABLE IF NOT EXISTS exam_review_locks (
+        session_id TEXT PRIMARY KEY,
+        reviewer_id TEXT NOT NULL,
+        reviewer_name TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )`).catch(e=>{ console.warn('exam_review_locks table check failed', e && e.message) });
 
       pgPool.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='exams_sessions') AS exists`).then(r=>{
         hasExamSessionsTable = r.rows[0] && r.rows[0].exists;
@@ -108,6 +116,10 @@ if(!envDatabaseUrl){
         hasSubmissionEventsTable = r.rows[0] && r.rows[0].exists;
         console.log('exam_submission_events table exists:', hasSubmissionEventsTable);
       }).catch(e=>{ console.warn('Failed to check exam_submission_events table existence:', e && e.message) });
+      pgPool.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='exam_review_locks') AS exists`).then(r=>{
+        hasReviewLocksTable = r.rows[0] && r.rows[0].exists;
+        console.log('exam_review_locks table exists:', hasReviewLocksTable);
+      }).catch(e=>{ console.warn('Failed to check exam_review_locks table existence:', e && e.message) });
     }).catch(err=>{
       console.error('Database connection failed (auth or network). Postgres features disabled. Error:', err && err.message);
       testPool.end().catch(()=>{});
@@ -393,6 +405,72 @@ function startApp(){
     else res.redirect('/');
   });
 
+  async function getActiveReviewLock(sessionId){
+    if(!pgPool || !hasReviewLocksTable || !sessionId) return null;
+    try{
+      const q = await pgPool.query(`
+        SELECT session_id, reviewer_id, reviewer_name, updated_at
+        FROM exam_review_locks
+        WHERE session_id = $1
+          AND updated_at > NOW() - ($2::text || ' seconds')::interval
+        LIMIT 1
+      `, [sessionId, String(REVIEW_LOCK_WINDOW_SECONDS)]);
+      return (q.rows && q.rows[0]) || null;
+    }catch(e){
+      console.warn('Failed to read review lock for session', sessionId, e && e.message);
+      return null;
+    }
+  }
+
+  async function upsertReviewLock(sessionId, reviewer){
+    if(!pgPool || !hasReviewLocksTable || !sessionId || !reviewer || !reviewer.id) return null;
+    const reviewerName = reviewer.username ? `${reviewer.username}${reviewer.discriminator ? `#${reviewer.discriminator}` : ''}` : reviewer.id;
+    await pgPool.query(`
+      INSERT INTO exam_review_locks (session_id, reviewer_id, reviewer_name, updated_at)
+      VALUES ($1,$2,$3,NOW())
+      ON CONFLICT (session_id)
+      DO UPDATE SET reviewer_id=EXCLUDED.reviewer_id, reviewer_name=EXCLUDED.reviewer_name, updated_at=NOW()
+    `, [sessionId, reviewer.id, reviewerName]);
+    return { reviewer_id: reviewer.id, reviewer_name: reviewerName };
+  }
+
+  async function clearReviewLockIfOwned(sessionId, reviewerId){
+    if(!pgPool || !hasReviewLocksTable || !sessionId || !reviewerId) return;
+    try{
+      await pgPool.query(`DELETE FROM exam_review_locks WHERE session_id=$1 AND reviewer_id=$2`, [sessionId, reviewerId]);
+    }catch(e){
+      console.warn('Failed to clear review lock for session', sessionId, e && e.message);
+    }
+  }
+
+  app.post('/api/exams/:id/lock', async (req, res)=>{
+    if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
+    const access = await verifyGuildRoleAccess(req.session.user.id);
+    if(!access.allowed) return res.status(access.status >= 500 ? access.status : 403).json({ error: access.status >= 500 ? 'role_check_unavailable' : 'forbidden' });
+    if(!pgPool || !hasReviewLocksTable) return res.status(503).json({ error: 'lock_service_unavailable' });
+
+    const sessionId = req.params.id;
+    const action = String((req.body && req.body.action) || 'claim').toLowerCase();
+    const me = req.session.user;
+
+    const current = await getActiveReviewLock(sessionId);
+    if(action === 'release'){
+      await clearReviewLockIfOwned(sessionId, me.id);
+      return res.json({ ok: true, released: true });
+    }
+
+    if(current && current.reviewer_id !== me.id){
+      return res.status(409).json({
+        error: 'under_review',
+        reviewerId: current.reviewer_id,
+        reviewerName: current.reviewer_name || 'Another reviewer'
+      });
+    }
+
+    const lock = await upsertReviewLock(sessionId, me);
+    return res.json({ ok: true, lock: { reviewerId: lock.reviewer_id, reviewerName: lock.reviewer_name } });
+  });
+
   // Register API endpoints that require session/DB access
   // List exams (from DB)
   app.get('/api/exams', async (req, res)=>{
@@ -405,14 +483,25 @@ function startApp(){
     const conditions = [];
     const params = [];
     let idx = 1;
-    if(status){ conditions.push(`status = $${idx++}`); params.push(status) }
+    if(status){ conditions.push(`es.status = $${idx++}`); params.push(status) }
     const where = conditions.length ? ('WHERE ' + conditions.join(' AND ')) : '';
-    const sql = `SELECT id,
-      exam_id,
-      status,
-      COALESCE(payload::jsonb->>'candidate_mention', payload::jsonb->>'candidateMention', payload::jsonb->>'candidate', payload::jsonb->>'candidate_name', payload::jsonb->>'userId') AS candidate_mention,
-      COALESCE(payload::jsonb->>'createdAt', to_char(created_at, 'YYYYMMDDHH24MISS')) AS created_at
-      FROM exams_sessions ${where} ORDER BY created_at DESC LIMIT 200`;
+    const lockJoin = hasReviewLocksTable
+      ? `LEFT JOIN exam_review_locks rl
+          ON rl.session_id = es.id
+         AND rl.updated_at > NOW() - ('${REVIEW_LOCK_WINDOW_SECONDS} seconds')::interval`
+      : '';
+    const lockSelect = hasReviewLocksTable
+      ? `, rl.reviewer_id AS under_review_by_id, rl.reviewer_name AS under_review_by`
+      : '';
+    const sql = `SELECT es.id,
+      es.exam_id,
+      es.status,
+      COALESCE(es.payload::jsonb->>'candidate_mention', es.payload::jsonb->>'candidateMention', es.payload::jsonb->>'candidate', es.payload::jsonb->>'candidate_name', es.payload::jsonb->>'userId') AS candidate_mention,
+      COALESCE(es.payload::jsonb->>'createdAt', to_char(es.created_at, 'YYYYMMDDHH24MISS')) AS created_at
+      ${lockSelect}
+      FROM exams_sessions es
+      ${lockJoin}
+      ${where} ORDER BY es.created_at DESC LIMIT 200`;
       try{
         const q = await pgPool.query(sql, params);
         const rows = q.rows || [];
@@ -725,6 +814,14 @@ function startApp(){
     if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
     const access = await verifyGuildRoleAccess(req.session.user.id);
     if(!access.allowed) return res.status(access.status >= 500 ? access.status : 403).json({ error: access.status >= 500 ? 'role_check_unavailable' : 'forbidden' });
+    const activeLock = await getActiveReviewLock(req.params.id);
+    if(activeLock && activeLock.reviewer_id !== req.session.user.id){
+      return res.status(409).json({
+        error: 'under_review',
+        reviewerId: activeLock.reviewer_id,
+        reviewerName: activeLock.reviewer_name || 'Another reviewer'
+      });
+    }
     const botBase = process.env.BOT_BASE_URL;
     const payload = req.body || {};
     const grades = Array.isArray(payload.grades) ? payload.grades : Array.isArray(payload.scores) ? payload.scores : null;
@@ -839,9 +936,13 @@ function startApp(){
         }catch(e){ console.error('Failed to mark exam graded for session', req.params.id, e && e.message) }
       }
       if(!shouldProxyBot){
+        await clearReviewLockIfOwned(req.params.id, req.session.user.id);
         return res.status(200).json(data);
       }
 
+      if(bresp.ok){
+        await clearReviewLockIfOwned(req.params.id, req.session.user.id);
+      }
       return res.status(bresp.status).json(data);
     }catch(err){ console.error('grade submission error for session', req.params.id, err); return res.status(502).json({ error: 'bad_gateway' }); }
   });

@@ -402,6 +402,17 @@ a:hover,a:focus,a:active{color:var(--accent);text-decoration:none}
   color:#8af0ad;
   border:1px solid rgba(54,199,108,0.22);
 }
+.dashboard-card__badge--locked{
+  text-transform:none;
+  letter-spacing:0;
+  max-width:72%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  background:rgba(245,215,122,0.14);
+  color:#ffe2a8;
+  border-color:rgba(245,215,122,0.3);
+}
 .dashboard-card__link,
 .dashboard-card:visited .dashboard-card__link,
 .dashboard-card:hover .dashboard-card__link,

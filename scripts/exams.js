@@ -53,9 +53,12 @@
       const candidate = it.candidate_mention || it.candidate || it.candidate_name || it.userId || 'Unknown candidate'
       const createdAt = formatDate(it.created_at)
       const phaseLabel = /phase\s*4/i.test(String(examId)) ? 'Phase 4 review' : 'Phase 1 review'
+      const lockName = String(it.under_review_by || '').trim()
+      const lockText = lockName ? `Under review by ${lockName}` : 'Active'
+      const badgeClass = lockName ? 'dashboard-card__badge dashboard-card__badge--locked' : 'dashboard-card__badge'
       a.innerHTML = `
         <div class="dashboard-card__top">
-          <span class="dashboard-card__badge">Active</span>
+          <span class="${badgeClass}">${lockText}</span>
           <span class="dashboard-card__link">Open review</span>
         </div>
         <h3>${phaseLabel}</h3>

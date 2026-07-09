@@ -14,6 +14,9 @@
   const submitBtn = form.querySelector('[type=submit]')
   let currentUser = null
   const PASS_PERCENT = 75
+  const LOCK_HEARTBEAT_MS = 30000
+  let lockHeartbeatTimer = null
+  let lockOwnedByMe = false
 
   sessionLabel.textContent = sessionId ? `Session: ${sessionId}` : 'No session specified.'
 
@@ -175,6 +178,77 @@
       }
     }
   }
+
+  function setInputsEnabled(enabled){
+    const feedback = byId('feedback')
+    if(feedback) feedback.disabled = !enabled
+    questionsEl.querySelectorAll('input[name=score]').forEach(input=>{ input.disabled = !enabled })
+  }
+
+  function stopLockHeartbeat(){
+    if(lockHeartbeatTimer){
+      clearInterval(lockHeartbeatTimer)
+      lockHeartbeatTimer = null
+    }
+  }
+
+  async function sendLockAction(action){
+    if(!sessionId) return null
+    const resp = await fetch(`${AUTH_SERVER}/api/exams/${encodeURIComponent(sessionId)}/lock`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ action })
+    })
+    const text = await resp.text().catch(()=> '')
+    let data = {}
+    try{ data = text ? JSON.parse(text) : {} }catch(_){ data = { error: text } }
+    return { ok: resp.ok, status: resp.status, data }
+  }
+
+  async function acquireOrRefreshLock(action){
+    try{
+      const lockResp = await sendLockAction(action)
+      if(!lockResp) return
+      if(lockResp.ok){
+        lockOwnedByMe = true
+        if(action === 'claim'){
+          setFormControlsEnabled(true)
+          setInputsEnabled(true)
+        }
+        return
+      }
+      if(lockResp.status === 409 && lockResp.data && lockResp.data.error === 'under_review'){
+        lockOwnedByMe = false
+        stopLockHeartbeat()
+        setFormControlsEnabled(false)
+        setInputsEnabled(false)
+        const who = lockResp.data.reviewerName || 'another reviewer'
+        resultEl.textContent = `This exam is currently under review by ${who}.`
+      }
+    }catch(e){
+      console.error('Lock request failed', e)
+    }
+  }
+
+  function startLockHeartbeat(){
+    stopLockHeartbeat()
+    lockHeartbeatTimer = setInterval(()=>{
+      if(!lockOwnedByMe) return
+      acquireOrRefreshLock('heartbeat')
+    }, LOCK_HEARTBEAT_MS)
+  }
+
+  function releaseLockBestEffort(){
+    if(!lockOwnedByMe || !sessionId) return
+    fetch(`${AUTH_SERVER}/api/exams/${encodeURIComponent(sessionId)}/lock`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ action: 'release' }),
+      keepalive: true
+    }).catch(()=>{})
+  }
   async function fetchExam(){
     try{
       const resp = await fetch(`${AUTH_SERVER}/api/exams/${encodeURIComponent(sessionId)}`, { credentials: 'include' })
@@ -182,6 +256,10 @@
       if(resp.status===401||resp.status===403){ location.href = `${AUTH_SERVER}/auth/discord?next=${encodeURIComponent(location.pathname+location.search)}`; return }
       const data = await resp.json()
       renderExam(data)
+      await acquireOrRefreshLock('claim')
+      if(lockOwnedByMe){
+        startLockHeartbeat()
+      }
     }catch(e){ console.error(e); resultEl.textContent = 'Failed to load exam.' }
   }
 
@@ -242,10 +320,26 @@
       const text = await resp.text()
       let data
       try{ data = JSON.parse(text) }catch(_){ data = { error: text } }
-      if(!resp.ok){ resultEl.textContent = `Error: ${data.message || data.error || resp.status}`; setFormControlsEnabled(true); form.classList.remove('is-submitting'); if(submitBtn) submitBtn.textContent = 'Submit Grades'; return }
+      if(!resp.ok){
+        if(resp.status === 409 && data && data.error === 'under_review'){
+          const who = data.reviewerName || 'another reviewer'
+          resultEl.textContent = `This exam is currently under review by ${who}.`
+          setFormControlsEnabled(false)
+          setInputsEnabled(false)
+          lockOwnedByMe = false
+          stopLockHeartbeat()
+          form.classList.remove('is-submitting')
+          if(submitBtn) submitBtn.textContent = 'Submit Grades'
+          return
+        }
+        resultEl.textContent = `Error: ${data.message || data.error || resp.status}`; setFormControlsEnabled(true); form.classList.remove('is-submitting'); if(submitBtn) submitBtn.textContent = 'Submit Grades'; return
+      }
       resultEl.textContent = 'Submitted successfully.'
       hidePreview()
       setFormControlsEnabled(false)
+      setInputsEnabled(false)
+      lockOwnedByMe = false
+      stopLockHeartbeat()
     }catch(e){ console.error(e); resultEl.textContent='Submission failed'; setFormControlsEnabled(true) }
     finally{
       form.classList.remove('is-submitting')
@@ -255,4 +349,8 @@
 
   fetchCurrentUser()
   if(sessionId) fetchExam()
+
+  window.addEventListener('beforeunload', ()=>{
+    releaseLockBestEffort()
+  })
 })();
