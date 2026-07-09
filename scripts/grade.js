@@ -21,7 +21,8 @@
   function renderExam(data){
     exam = data
     reviewerEl.textContent = data.reviewer ? `${data.reviewer.username}#${data.reviewer.discriminator}` : 'Reviewer'
-    sessionLabel.textContent = `Session: ${data.id || sessionId} — Candidate: ${data.candidateMention || 'unknown'}`
+    const candidate = data.candidateMention || data.candidate_name || data.userId || (data.user && data.user.username) || 'unknown'
+    sessionLabel.textContent = `Session: ${data.examId || data.id || sessionId} — Candidate: ${candidate}`
 
     if(!data.questions || data.questions.length===0){
       questionsEl.innerHTML = '<p>No questions found for this session.</p>'
@@ -81,7 +82,7 @@
     const feedback = byId('feedback').value || ''
     try{
       const resp = await fetch(`${AUTH_SERVER}/api/exams/${encodeURIComponent(sessionId)}/grade`,{
-        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scores,feedback}), credentials: 'include'
+        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({grades: scores, feedback}), credentials: 'include'
       })
       const data = await resp.json()
       if(!resp.ok){ resultEl.textContent = `Error: ${data.message || resp.status}`; return }

@@ -230,10 +230,12 @@ app.get('/api/exams', async (req, res)=>{
   if(!pgPool) return res.status(500).json({ error: 'server not configured to read DB' });
   const examId = req.query.examId || null;
   const status = req.query.status || null;
+  const phase = req.query.phase || null;
   const conditions = [];
   const params = [];
   let idx = 1;
   if(examId){ conditions.push(`payload::jsonb->>'examId' = $${idx++}`); params.push(examId) }
+  if(phase){ conditions.push(`(payload::jsonb->>'phase' = $${idx} OR payload::jsonb->>'examId' ILIKE $${idx})`); params.push(`%phase${phase}%`); idx++ }
   if(status){ conditions.push(`payload::jsonb->>'status' = $${idx++}`); params.push(status) }
   const where = conditions.length ? ('WHERE ' + conditions.join(' AND ')) : '';
   const sql = `SELECT id,
@@ -251,49 +253,54 @@ app.get('/api/exams', async (req, res)=>{
 
 function normalizeExamPayload(payload, examId){
   const data = { id: examId, ...payload };
-  data.candidateMention = payload.candidate_mention || payload.candidateMention || payload.candidate || payload.candidate_name || payload.userId || 'unknown';
-  data.status = payload.status || payload.phase_status || 'pending';
-  data.examId = payload.examId || payload.exam_id || 'unknown';
+  data.candidateMention = payload.candidate_mention || payload.candidateMention || payload.candidate || payload.candidate_name || payload.userId || (payload.user && payload.user.username) || 'unknown';
+  data.status = payload.status || payload.phase_status || payload.phase || 'pending';
+  data.examId = payload.examId || payload.exam_id || payload.exam || examId || 'unknown';
+  data.phase = payload.phase || (typeof data.examId === 'string' && data.examId.match(/phase\d+/i)?.[0]) || null;
+
+  const getPrompt = (prompt, idx) => {
+    if(typeof prompt === 'string') return prompt;
+    if(!prompt || typeof prompt !== 'object') return `Question ${idx+1}`;
+    return prompt.prompt || prompt.question || prompt.text || prompt.label || `Question ${idx+1}`;
+  };
+  const getAnswer = (answer) => {
+    if(typeof answer === 'string') return answer;
+    if(!answer || typeof answer !== 'object') return '';
+    return answer.answer || answer.response || answer.value || answer.text || '';
+  };
+
   const questions = [];
-  if(Array.isArray(payload.questions)){
-    payload.questions.forEach((prompt, idx)=>{
-      const answerObj = Array.isArray(payload.answers) ? payload.answers.find(a=>a.index === idx) : null;
-      questions.push({
-        prompt: typeof prompt === 'string' ? prompt : prompt.prompt || prompt.question || `Question ${idx+1}`,
-        answer: answerObj ? answerObj.answer : ''
-      });
+  const prompts = Array.isArray(payload.questions) ? payload.questions : null;
+  const answers = Array.isArray(payload.answers) ? payload.answers : null;
+  const responses = Array.isArray(payload.responses) ? payload.responses : null;
+
+  if(prompts && answers){
+    const answerMap = new Map();
+    answers.forEach((item, idx)=>{
+      const index = item && typeof item === 'object' ? (item.index ?? item.questionIndex ?? item.question_id ?? idx) : idx;
+      answerMap.set(index, getAnswer(item));
     });
-  }else if(Array.isArray(payload.answers) && Array.isArray(payload.questions)){
-    payload.questions.forEach((prompt, idx)=>{
-      const answerObj = payload.answers.find(a=>a.index === idx);
-      questions.push({
-        prompt: typeof prompt === 'string' ? prompt : prompt.prompt || prompt.question || `Question ${idx+1}`,
-        answer: answerObj ? answerObj.answer : ''
-      });
+    prompts.forEach((prompt, idx)=>{
+      questions.push({ prompt: getPrompt(prompt, idx), answer: answerMap.has(idx) ? answerMap.get(idx) : '' });
     });
-  }else if(Array.isArray(payload.answers)){
-    payload.answers.forEach((item, idx)=>{
-      questions.push({
-        prompt: payload.questions && payload.questions[item.index] ? payload.questions[item.index] : `Question ${item.index != null ? item.index+1 : idx+1}`,
-        answer: item.answer || item.response || item.value || item.text || ''
-      });
+  } else if(prompts){
+    prompts.forEach((prompt, idx)=>{
+      const answerObj = answers && answers.find(a=>a.index === idx || a.questionIndex === idx || a.question_id === idx);
+      questions.push({ prompt: getPrompt(prompt, idx), answer: getAnswer(answerObj) });
     });
-  }else if(Array.isArray(payload.responses)){
-    payload.responses.forEach((item, idx)=>{
-      questions.push({
-        prompt: item.prompt || item.question || `Question ${idx+1}`,
-        answer: item.answer || item.response || item.value || item.text || ''
-      });
+  } else if(answers){
+    answers.forEach((item, idx)=>{
+      const promptSource = item && typeof item === 'object' ? (item.prompt || item.question || item.text) : null;
+      const prompt = promptSource || (Array.isArray(payload.questions) && payload.questions[item && typeof item === 'object' ? (item.index ?? idx) : idx]) || `Question ${idx+1}`;
+      questions.push({ prompt: getPrompt(prompt, idx), answer: getAnswer(item) });
     });
-  }else if(payload.responses && typeof payload.responses === 'object'){
-    Object.values(payload.responses).forEach((item, idx)=>{
-      questions.push({
-        prompt: item.prompt || item.question || `Question ${idx+1}`,
-        answer: item.answer || item.response || item.value || item.text || ''
-      });
+  } else if(responses){
+    responses.forEach((item, idx)=>{
+      questions.push({ prompt: getPrompt(item, idx), answer: getAnswer(item) });
     });
   }
-  if(questions.length) data.questions = questions;
+
+  data.questions = questions;
   return data;
 }
 
@@ -334,12 +341,13 @@ app.post('/api/exams/:id/grade', async (req, res)=>{
   const botBase = process.env.BOT_BASE_URL;
   if(!botBase) return res.status(500).json({ error: 'BOT_BASE_URL not configured on server' });
   const payload = req.body || {};
-  // basic validation
-  if(!Array.isArray(payload.grades)) return res.status(400).json({ error: 'missing grades array' });
+  const grades = Array.isArray(payload.grades) ? payload.grades : Array.isArray(payload.scores) ? payload.scores : null;
+  if(!grades) return res.status(400).json({ error: 'missing grades array' });
+  const reviewPayload = { grades, feedback: payload.feedback || '' };
   const url = `${botBase.replace(/\/$/,'')}/exams/${encodeURIComponent(req.params.id)}/grade`;
   console.log('Proxy POST to bot:', url, 'from user', req.session.user.id);
   try{
-    const bresp = await fetch(url, { method: 'POST', headers: { 'Content-Type':'application/json', 'x-discord-token': req.session.accessToken }, body: JSON.stringify(payload) });
+    const bresp = await fetch(url, { method: 'POST', headers: { 'Content-Type':'application/json', 'x-discord-token': req.session.accessToken }, body: JSON.stringify(reviewPayload) });
     const txt = await bresp.text().catch(()=>null);
     let data = null;
     try{ data = txt ? JSON.parse(txt) : null }catch(e){ data = txt }
@@ -350,7 +358,7 @@ app.post('/api/exams/:id/grade', async (req, res)=>{
         await pgPool.query(`INSERT INTO exam_reviews (session_id, reviewer_id, review, created_at, updated_at)
           VALUES ($1,$2,$3,NOW(),NOW())
           ON CONFLICT (session_id) DO UPDATE SET reviewer_id = EXCLUDED.reviewer_id, review = EXCLUDED.review, updated_at = NOW()`,
-          [req.params.id, req.session.user.id, JSON.stringify({ grades: payload.grades, feedback: payload.feedback || '', reviewer: { id: req.session.user.id, username: req.session.user.username, discriminator: req.session.user.discriminator } })]
+          [req.params.id, req.session.user.id, JSON.stringify({ grades, feedback: reviewPayload.feedback, reviewer: { id: req.session.user.id, username: req.session.user.username, discriminator: req.session.user.discriminator } })]
         );
       }catch(e){ console.warn('Failed to persist review to DB', e && e.message) }
       try{
