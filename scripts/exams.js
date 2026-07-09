@@ -23,7 +23,8 @@
       const li = document.createElement('li')
       const a = document.createElement('a')
       a.href = `grade.html?session=${encodeURIComponent(it.id)}`
-      a.textContent = `${it.id} — ${it.candidate_mention || it.candidate || it.candidate_name || it.userId || 'unknown'} (${it.created_at || ''})`
+      const examId = it.exam_id || it.examId || it.id
+      a.textContent = `${examId} — ${it.candidate_mention || it.candidate || it.candidate_name || it.userId || 'unknown'} (${it.created_at || ''})`
       li.appendChild(a)
       ul.appendChild(li)
     })
@@ -46,7 +47,7 @@
   }
 
   function isPhaseExam(item, phaseNumber){
-    const haystack = `${item && item.examId ? item.examId : ''} ${item && item.id ? item.id : ''}`.toLowerCase()
+    const haystack = `${item && item.exam_id ? item.exam_id : ''} ${item && item.examId ? item.examId : ''} ${item && item.id ? item.id : ''}`.toLowerCase()
     return haystack.includes(`phase${phaseNumber}`)
   }
 

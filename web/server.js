@@ -296,20 +296,18 @@ function startApp(){
   app.get('/api/exams', async (req, res)=>{
     if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
     if(!pgPool) return res.status(500).json({ error: 'server not configured to read DB' });
-    const examId = req.query.examId || null;
     const status = req.query.status || null;
     const phase = req.query.phase || null;
     const conditions = [];
     const params = [];
     let idx = 1;
-    if(examId){ conditions.push(`payload::jsonb->>'examId' = $${idx++}`); params.push(examId) }
-    if(phase){ conditions.push(`(payload::jsonb->>'phase' = $${idx} OR payload::jsonb->>'examId' ILIKE $${idx})`); params.push(`%phase${phase}%`); idx++ }
-    if(status){ conditions.push(`payload::jsonb->>'status' = $${idx++}`); params.push(status) }
+    if(phase){ conditions.push(`(exam_id ILIKE $${idx} OR exam_id = $${idx})`); params.push(`%phase${phase}%`); idx++ }
+    if(status){ conditions.push(`status = $${idx++}`); params.push(status) }
     const where = conditions.length ? ('WHERE ' + conditions.join(' AND ')) : '';
     const sql = `SELECT id,
-        payload::jsonb->>'examId' AS examId,
-        payload::jsonb->>'status' AS status,
-        COALESCE(payload::jsonb->>'candidate_mention', payload::jsonb->>'candidateMention', payload::jsonb->>'candidate', payload::jsonb->>'candidate_name', payload::jsonb->>'userId') AS candidate_mention,
+      exam_id,
+      status,
+      COALESCE(candidate_mention, payload::jsonb->>'candidate_mention', payload::jsonb->>'candidateMention', payload::jsonb->>'candidate', payload::jsonb->>'candidate_name', payload::jsonb->>'userId') AS candidate_mention,
         COALESCE(payload::jsonb->>'createdAt', to_char(created_at, 'YYYYMMDDHH24MISS')) AS created_at
         FROM exams_sessions ${where} ORDER BY created_at DESC LIMIT 200`;
       try{
