@@ -23,9 +23,33 @@
     </div>
   </header>
 
-  <main class="container content">
-    <h1>Your profile</h1>
-    <p>This page is a placeholder for the profile view.</p>
+  <main class="container content profile-page">
+    <section class="profile-shell">
+      <div class="profile-card">
+        <div class="profile-card__banner"></div>
+        <div class="profile-card__body">
+          <img id="profileAvatar" class="profile-card__avatar" alt="Profile avatar" />
+          <div class="profile-card__identity">
+            <h1 id="profileName">Loading profile...</h1>
+            <p id="profileHandle">Fetching account details...</p>
+            <p id="profileBio" class="profile-card__bio"></p>
+          </div>
+        </div>
+        <div id="profileRoles" class="profile-roles"></div>
+      </div>
+
+      <div class="profile-grid">
+        <section class="profile-panel">
+          <h2>Review stats</h2>
+          <div class="profile-stats" id="profileStats"></div>
+        </section>
+
+        <section class="profile-panel">
+          <h2>Recent submissions</h2>
+          <div id="recentSubmissions" class="profile-activity"></div>
+        </section>
+      </div>
+    </section>
   </main>
 
   <footer class="site-footer">
@@ -44,5 +68,6 @@
   <script>document.getElementById('year-profile').textContent=new Date().getFullYear();</script>
   <script src="scripts/server-config.js"></script>
   <script src="scripts/auth.js"></script>
+  <script src="scripts/profile.js"></script>
 </body>
 </html>

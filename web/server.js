@@ -37,6 +37,7 @@ let sessionStore = null;
 let hasExamSessionsTable = false;
 let examReviewsColumns = new Set();
 let examReviewsMeta = {}; // column_name -> { is_nullable, column_default }
+let hasSubmissionEventsTable = false;
 if(!envDatabaseUrl){
   console.warn('DATABASE_URL not set in environment; Postgres support is disabled.');
 } else {
@@ -62,6 +63,18 @@ if(!envDatabaseUrl){
       // create helper tables if possible
       pgPool.query(`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT, discriminator TEXT, avatar TEXT, updated_at TIMESTAMP DEFAULT NOW())`).catch(e=>{ console.warn('users table check failed', e && e.message) });
       pgPool.query(`CREATE TABLE IF NOT EXISTS exam_reviews (session_id TEXT PRIMARY KEY, reviewer_id TEXT, review JSONB, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())`).catch(e=>{ console.warn('exam_reviews table check failed', e && e.message) });
+      pgPool.query(`CREATE TABLE IF NOT EXISTS exam_submission_events (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        exam_id TEXT,
+        exam_type TEXT,
+        score INTEGER,
+        max_score INTEGER,
+        percent INTEGER,
+        passed BOOLEAN,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )`).catch(e=>{ console.warn('exam_submission_events table check failed', e && e.message) });
 
       pgPool.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='exams_sessions') AS exists`).then(r=>{
         hasExamSessionsTable = r.rows[0] && r.rows[0].exists;
@@ -86,6 +99,11 @@ if(!envDatabaseUrl){
       }).catch(()=>{
         console.log('exam_reviews table not present or inaccessible');
       });
+
+      pgPool.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='exam_submission_events') AS exists`).then(r=>{
+        hasSubmissionEventsTable = r.rows[0] && r.rows[0].exists;
+        console.log('exam_submission_events table exists:', hasSubmissionEventsTable);
+      }).catch(e=>{ console.warn('Failed to check exam_submission_events table existence:', e && e.message) });
     }).catch(err=>{
       console.error('Database connection failed (auth or network). Postgres features disabled. Error:', err && err.message);
       testPool.end().catch(()=>{});
@@ -286,6 +304,58 @@ function startApp(){
     }
   });
 
+  app.get('/api/profile', async (req, res)=>{
+    if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
+    if(!pgPool) return res.json({ user: req.session.user, stats: null, recentSubmissions: [], roles: [] });
+    try{
+      const user = req.session.user;
+      const statsRes = await pgPool.query(`
+        SELECT
+          COUNT(*)::int AS total_submissions,
+          COALESCE(SUM(CASE WHEN passed THEN 1 ELSE 0 END),0)::int AS passed_submissions,
+          COALESCE(AVG(percent),0)::numeric(10,2) AS average_percent,
+          COALESCE(MAX(created_at), NOW()) AS last_submitted_at,
+          COALESCE(SUM(CASE WHEN exam_type = 'phase1' THEN 1 ELSE 0 END),0)::int AS phase1_submissions,
+          COALESCE(SUM(CASE WHEN exam_type = 'phase4' THEN 1 ELSE 0 END),0)::int AS phase4_submissions
+        FROM exam_submission_events
+        WHERE user_id = $1
+      `, [user.id]);
+
+      const recentRes = await pgPool.query(`
+        SELECT session_id, exam_id, exam_type, score, max_score, percent, passed, created_at
+        FROM exam_submission_events
+        WHERE user_id = $1
+        ORDER BY created_at DESC
+        LIMIT 5
+      `, [user.id]);
+
+      const stats = statsRes.rows[0] || {};
+      const roles = [
+        stats.total_submissions > 0 ? 'Active reviewer' : null,
+        stats.phase1_submissions > 0 ? 'Phase 1 reviewer' : null,
+        stats.phase4_submissions > 0 ? 'Phase 4 reviewer' : null,
+        Number(stats.average_percent || 0) >= 75 ? 'Strong pass rate' : null
+      ].filter(Boolean);
+
+      return res.json({
+        user,
+        stats: {
+          totalSubmissions: Number(stats.total_submissions || 0),
+          passedSubmissions: Number(stats.passed_submissions || 0),
+          averagePercent: Number(stats.average_percent || 0),
+          lastSubmittedAt: stats.last_submitted_at || null,
+          phase1Submissions: Number(stats.phase1_submissions || 0),
+          phase4Submissions: Number(stats.phase4_submissions || 0)
+        },
+        roles,
+        recentSubmissions: recentRes.rows || []
+      });
+    }catch(e){
+      console.error('profile fetch failed', e && e.message)
+      return res.status(502).json({ error: 'db_error' })
+    }
+  });
+
   app.get('/logout', (req, res)=>{
     if(req.session) req.session.destroy(()=>{ res.redirect('/'); });
     else res.redirect('/');
@@ -375,6 +445,18 @@ function startApp(){
     return data;
   }
 
+  function normalizeExamType(examId){
+    const text = String(examId || '').toLowerCase();
+    if(text.includes('phase1') || text.includes('phase 1') || text.includes('phase-1') || text.includes('phase_1')) return 'phase1';
+    if(text.includes('phase4') || text.includes('phase 4') || text.includes('phase-4') || text.includes('phase_4')) return 'phase4';
+    return text.replace(/[^a-z0-9]+/g, '') || 'unknown';
+  }
+
+  function getExamMaxScoreFromPayload(payload){
+    const questions = Array.isArray(payload && payload.questions) ? payload.questions : [];
+    return questions.reduce((sum, q)=> sum + (Number(q && q.maxScore != null ? q.maxScore : 1) || 1), 0);
+  }
+
   // Fetch single exam: prefer DB row, fallback to bot
   app.get('/api/exams/:id', async (req, res)=>{
     if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
@@ -436,6 +518,27 @@ function startApp(){
         console.warn('BOT_BASE_URL not configured; saving review locally only');
         data = { warning: 'BOT_BASE_URL not configured; review saved locally', review: reviewPayload };
       }
+
+      if(pgPool && (!shouldProxyBot || bresp.ok)){
+        try{
+          const examRow = await pgPool.query(`SELECT payload FROM exams_sessions WHERE id = $1 LIMIT 1`, [req.params.id]);
+          const payloadRow = examRow.rows && examRow.rows[0] ? examRow.rows[0].payload : null;
+          const examPayload = typeof payloadRow === 'string' ? JSON.parse(payloadRow) : payloadRow;
+          const examId = examPayload && (examPayload.examId || examPayload.exam_id || examPayload.exam || req.params.id) || req.params.id;
+          const examType = normalizeExamType(examId);
+          const maxScore = getExamMaxScoreFromPayload(examPayload);
+          const totalScore = Array.isArray(grades) ? grades.reduce((sum, value)=> sum + (Number(value) || 0), 0) : 0;
+          const percent = maxScore ? Math.round((totalScore / maxScore) * 100) : 0;
+          const passed = percent >= 75;
+          await pgPool.query(`
+            INSERT INTO exam_submission_events (id, user_id, session_id, exam_id, exam_type, score, max_score, percent, passed)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+          `, [require('crypto').randomUUID(), req.session.user.id, req.params.id, examId, examType, totalScore, maxScore, percent, passed]);
+        }catch(e){
+          console.error('Failed to persist exam submission event', req.params.id, e && e.message)
+        }
+      }
+
       // persist grades to DB when available, adapt to actual exam_reviews schema
       if(pgPool){
         console.log('Persisting review - detected exam_reviews columns:', Array.from(examReviewsColumns));
@@ -511,6 +614,7 @@ function startApp(){
       if(!shouldProxyBot){
         return res.status(200).json(data);
       }
+
       return res.status(bresp.status).json(data);
     }catch(err){ console.error('grade submission error for session', req.params.id, err); return res.status(502).json({ error: 'bad_gateway' }); }
   });
