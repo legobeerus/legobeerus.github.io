@@ -17,8 +17,7 @@ const SESSION_SECRET = process.env.SESSION_SECRET || 'devsecret';
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 const BOT_BASE_URL = process.env.BOT_BASE_URL || '';
 const BOT_API_TOKEN = process.env.BOT_API_TOKEN || process.env.DISCORD_BOT_TOKEN || '';
-const REQUIRED_GUILD_ID = process.env.GUILD_ID || process.env.BOT_API_DEFAULT_GUILD_ID || '';
-const REQUIRED_ROLE_IDS = new Set(String(process.env.ALLOWED_ROLE_IDS || '').split(',').map(value => value.trim()).filter(Boolean));
+const BOT_GUILD_ID = process.env.BOT_GUILD_ID || process.env.GUILD_ID || process.env.BOT_API_DEFAULT_GUILD_ID || '';
 
 if(!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET){
   console.warn('Warning: DISCORD_CLIENT_ID or DISCORD_CLIENT_SECRET not set. OAuth will not work until configured.');
@@ -326,7 +325,9 @@ function startApp(){
 
   app.get('/api/profile', async (req, res)=>{
     if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
-    if(!pgPool) return res.json({ user: req.session.user, stats: null, recentSubmissions: [], roles: [] });
+    const roleLookup = await fetchGuildRolePayload(req.session.user.id).catch(e=>({ ok: false, status: 502, payload: null, error: e && e.message }));
+    const guildRoles = roleEntriesFromPayload(roleLookup && roleLookup.payload);
+    if(!pgPool) return res.json({ user: req.session.user, stats: null, recentSubmissions: [], roles: guildRoles.map(role => role.name).filter(Boolean) });
     try{
       const user = req.session.user;
       const statsRes = await pgPool.query(`
@@ -350,12 +351,6 @@ function startApp(){
       `, [user.id]);
 
       const stats = statsRes.rows[0] || {};
-      const roles = [
-        stats.total_submissions > 0 ? 'Active reviewer' : null,
-        stats.phase1_submissions > 0 ? 'Phase 1 reviewer' : null,
-        stats.phase4_submissions > 0 ? 'Phase 4 reviewer' : null,
-        Number(stats.average_percent || 0) >= 75 ? 'Strong pass rate' : null
-      ].filter(Boolean);
 
       return res.json({
         user,
@@ -367,7 +362,7 @@ function startApp(){
           phase1Submissions: Number(stats.phase1_submissions || 0),
           phase4Submissions: Number(stats.phase4_submissions || 0)
         },
-        roles,
+        roles: guildRoles.map(role => role.name).filter(Boolean),
         recentSubmissions: recentRes.rows || []
       });
     }catch(e){
@@ -479,14 +474,42 @@ function startApp(){
     return questions.reduce((sum, q)=> sum + (Number(q && q.maxScore != null ? q.maxScore : 1) || 1), 0);
   }
 
-  async function verifyGuildRoleAccess(userId){
-    if(!userId) return { allowed: false, status: 401, error: 'unauthenticated' };
-    if(!BOT_BASE_URL) return { allowed: false, status: 503, error: 'BOT_BASE_URL not configured' };
-    if(!BOT_API_TOKEN) return { allowed: false, status: 503, error: 'BOT_API_TOKEN not configured' };
-    if(!REQUIRED_GUILD_ID) return { allowed: false, status: 503, error: 'GUILD_ID not configured' };
-    if(!REQUIRED_ROLE_IDS.size) return { allowed: false, status: 503, error: 'ALLOWED_ROLE_IDS not configured' };
+  function roleEntriesFromPayload(payload){
+    const buckets = [];
+    if(Array.isArray(payload && payload.roles)) buckets.push(...payload.roles);
+    if(Array.isArray(payload && payload.roleIds)) buckets.push(...payload.roleIds);
+    if(Array.isArray(payload && payload.memberRoles)) buckets.push(...payload.memberRoles);
+    if(Array.isArray(payload && payload.guildRoles)) buckets.push(...payload.guildRoles);
+    if(Array.isArray(payload && payload.member && payload.member.roles)) buckets.push(...payload.member.roles);
+    if(Array.isArray(payload && payload.data && payload.data.roles)) buckets.push(...payload.data.roles);
 
-    const url = `${BOT_BASE_URL.replace(/\/$/, '')}/api/guilds/${encodeURIComponent(REQUIRED_GUILD_ID)}/members/${encodeURIComponent(userId)}/roles`;
+    return buckets.flatMap(entry=>{
+      if(entry == null) return [];
+      if(typeof entry === 'string' || typeof entry === 'number'){
+        const text = String(entry);
+        return [{ id: text, name: text }];
+      }
+      if(typeof entry === 'object'){
+        const id = entry.id ?? entry.roleId ?? entry.role_id ?? entry.value ?? entry.discordRoleId ?? null;
+        const name = entry.name ?? entry.roleName ?? entry.label ?? entry.title ?? entry.displayName ?? entry.text ?? null;
+        if(id || name){
+          return [{ id: String(id || name), name: String(name || id) }];
+        }
+      }
+      return [];
+    });
+  }
+
+  async function fetchGuildRolePayload(userId){
+    if(!userId) return { ok: false, status: 401, payload: null, error: 'unauthenticated' };
+    if(!BOT_BASE_URL) return { ok: false, status: 503, payload: null, error: 'BOT_BASE_URL not configured' };
+    if(!BOT_API_TOKEN) return { ok: false, status: 503, payload: null, error: 'BOT_API_TOKEN not configured' };
+
+    const base = BOT_BASE_URL.replace(/\/$/, '');
+    const url = BOT_GUILD_ID
+      ? `${base}/api/guilds/${encodeURIComponent(BOT_GUILD_ID)}/members/${encodeURIComponent(userId)}/roles`
+      : `${base}/api/guild-members/${encodeURIComponent(userId)}/roles`;
+
     const response = await fetch(url, {
       headers: {
         Authorization: `Bearer ${BOT_API_TOKEN}`,
@@ -496,33 +519,31 @@ function startApp(){
     const text = await response.text().catch(()=> '');
     let payload = null;
     if(text){
-      try{
-        payload = JSON.parse(text);
-      }catch(e){
-        payload = text;
-      }
+      try{ payload = JSON.parse(text); }catch(e){ payload = text; }
     }
+    return { ok: response.ok, status: response.status, payload, url };
+  }
 
-    if(!response.ok){
+  async function verifyGuildRoleAccess(userId){
+    const lookup = await fetchGuildRolePayload(userId);
+    if(!lookup.ok){
       return {
         allowed: false,
-        status: response.status === 401 || response.status === 403 ? 403 : 502,
+        status: lookup.status === 401 || lookup.status === 403 ? 403 : 502,
         error: 'bot_role_lookup_failed',
-        details: payload
+        details: lookup.payload,
+        url: lookup.url
       };
     }
 
-    const roles = Array.isArray(payload && payload.roles)
-      ? payload.roles.map(role => String(role))
-      : Array.isArray(payload && payload.roleIds)
-        ? payload.roleIds.map(role => String(role))
-        : Array.isArray(payload)
-          ? payload.map(role => String(role))
-          : [];
-    const matched = roles.filter(roleId => REQUIRED_ROLE_IDS.has(String(roleId)));
-    const allowed = typeof (payload && payload.allowed) === 'boolean' ? payload.allowed : matched.length > 0;
+    const roles = roleEntriesFromPayload(lookup.payload);
+    const allowed = typeof (lookup.payload && lookup.payload.allowed) === 'boolean'
+      ? lookup.payload.allowed
+      : typeof (lookup.payload && lookup.payload.isAllowed) === 'boolean'
+        ? lookup.payload.isAllowed
+        : false;
 
-    return { allowed, status: allowed ? 200 : 403, roles, matched, details: payload };
+    return { allowed, status: allowed ? 200 : 403, roles, details: lookup.payload, url: lookup.url };
   }
 
   // Fetch single exam: prefer DB row, fallback to bot

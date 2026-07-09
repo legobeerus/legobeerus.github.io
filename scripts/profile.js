@@ -108,7 +108,7 @@
 
       const total = Number(profile.stats && profile.stats.totalSubmissions || 0)
       const avg = Number(profile.stats && profile.stats.averagePercent || 0)
-      const roles = Array.isArray(profile.roles) && profile.roles.length ? profile.roles : ['Reviewer']
+      const roles = Array.isArray(profile.roles) ? profile.roles : []
       profileBio.textContent = total ? `You have reviewed ${total} exam(s) with an average score of ${avg}%.` : 'No review submissions have been recorded yet.'
 
       renderChips(profileRoles, roles)
