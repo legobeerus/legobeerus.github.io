@@ -482,36 +482,38 @@ function startApp(){
     const addRole = (id, name)=>{
       const cleanId = id != null ? String(id).trim() : '';
       const cleanName = name != null ? String(name).trim() : '';
-      const key = `${cleanId}::${cleanName}`;
       if(!cleanId && !cleanName) return;
+      const key = `${cleanId}::${cleanName}`;
       if(seen.has(key)) return;
       seen.add(key);
       results.push({ id: cleanId || cleanName, name: cleanName || cleanId });
     };
 
-    const walk = (value, path='')=>{
-      if(value == null) return;
+    const collect = value=>{
+      if(!value) return;
       if(Array.isArray(value)){
-        value.forEach((item, idx)=>walk(item, `${path}[${idx}]`));
+        value.forEach(entry=>collect(entry));
+        return;
+      }
+      if(typeof value === 'string' || typeof value === 'number'){
+        const text = String(value).trim();
+        if(text) addRole(text, text);
         return;
       }
       if(typeof value === 'object'){
         const id = value.id ?? value.roleId ?? value.role_id ?? value.value ?? value.discordRoleId ?? null;
         const name = value.name ?? value.roleName ?? value.label ?? value.title ?? value.displayName ?? value.text ?? null;
         if(id || name) addRole(id, name);
-        for(const [key, child] of Object.entries(value)){
-          walk(child, path ? `${path}.${key}` : key);
-        }
-        return;
-      }
-      const text = String(value).trim();
-      if(!text) return;
-      if(/(^|\.)roles?(\.|\[|$)/i.test(path) || /role/i.test(path)){
-        addRole(text, text);
       }
     };
 
-    walk(payload);
+    collect(payload && payload.roles);
+    collect(payload && payload.roleIds);
+    collect(payload && payload.memberRoles);
+    collect(payload && payload.guildRoles);
+    collect(payload && payload && payload.member && payload.member.roles);
+    collect(payload && payload && payload.data && payload.data.roles);
+
     return results;
   }
 
