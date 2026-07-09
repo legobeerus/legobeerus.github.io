@@ -7,6 +7,24 @@
 
   const AUTH_SERVER = (window && window.__AUTH_SERVER__) || window.location.origin
 
+  function formatDate(value){
+    if(!value) return ''
+    const text = String(value)
+    const isoLike = text.length === 14 && /^\d+$/.test(text)
+    if(isoLike){
+      const year = Number(text.slice(0,4))
+      const month = Number(text.slice(4,6)) - 1
+      const day = Number(text.slice(6,8))
+      const hour = Number(text.slice(8,10))
+      const minute = Number(text.slice(10,12))
+      const second = Number(text.slice(12,14))
+      const date = new Date(year, month, day, hour, minute, second)
+      if(!Number.isNaN(date.getTime())) return date.toLocaleString()
+    }
+    const maybeDate = new Date(text)
+    return Number.isNaN(maybeDate.getTime()) ? text : maybeDate.toLocaleString()
+  }
+
   async function ensureAuth(){
     try{
       const r = await fetch(`${AUTH_SERVER}/api/me`, { credentials: 'include' })
@@ -17,18 +35,36 @@
 
   function renderList(container, items){
     container.innerHTML = '';
-    if(!items || items.length===0){ container.textContent = 'No active exams.'; return }
-    const ul = document.createElement('ul')
+    if(!items || items.length===0){
+      const empty = document.createElement('div')
+      empty.className = 'dashboard-empty'
+      empty.textContent = 'No active exams are waiting in this section.'
+      container.appendChild(empty)
+      return
+    }
+    const grid = document.createElement('div')
+    grid.className = 'dashboard-grid'
     items.forEach(it=>{
-      const li = document.createElement('li')
       const a = document.createElement('a')
+      a.className = 'dashboard-card'
       a.href = `grade.html?session=${encodeURIComponent(it.id)}`
       const examId = it.exam_id || it.examId || it.id
-      a.textContent = `${examId} — ${it.candidate_mention || it.candidate || it.candidate_name || it.userId || 'unknown'} (${it.created_at || ''})`
-      li.appendChild(a)
-      ul.appendChild(li)
+      const candidate = it.candidate_mention || it.candidate || it.candidate_name || it.userId || 'Unknown candidate'
+      const createdAt = formatDate(it.created_at)
+      const phaseLabel = /phase\s*4/i.test(String(examId)) ? 'Phase 4 review' : 'Phase 1 review'
+      a.innerHTML = `
+        <div class="dashboard-card__top">
+          <span class="dashboard-card__badge">Active</span>
+          <span class="dashboard-card__link">Open review</span>
+        </div>
+        <h3>${phaseLabel}</h3>
+        <p>${candidate}</p>
+        <div class="dashboard-card__meta">Submitted${createdAt ? ` ${createdAt}` : ''}</div>
+      `
+      a.setAttribute('aria-label', `${phaseLabel} for ${candidate}`)
+      grid.appendChild(a)
     })
-    container.appendChild(ul)
+    container.appendChild(grid)
   }
 
   function mergeUniqueLists(lists){
@@ -82,7 +118,7 @@
 
       renderList(phase1List, mergeUniqueLists([phase1Items]))
       renderList(phase4List, mergeUniqueLists([phase4Items]))
-      statusMsg.textContent = `Loaded ${items.length} exams. Phase 1: ${phase1Items.length}, Phase 4: ${phase4Items.length}`
+      statusMsg.textContent = `Loaded ${items.length} exams. Showing ${phase1Items.length} active review(s) in Phase 1 and ${phase4Items.length} in Phase 4.`
     }catch(e){ console.error(e); statusMsg.textContent='Failed to load exams' }
   }
 

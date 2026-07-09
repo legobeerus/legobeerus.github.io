@@ -237,3 +237,73 @@ a:hover,a:focus,a:active{color:var(--accent);text-decoration:none}
   .grading input[type=number]{width:100%}
   .grading .actions{flex-direction:column}
 }
+
+/* Dashboard cards */
+.dashboard-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+  gap:16px;
+  margin-top:14px;
+}
+.dashboard-card{
+  position:relative;
+  display:block;
+  padding:18px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,0.06);
+  background:linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02));
+  color:var(--fg);
+  text-decoration:none;
+  overflow:hidden;
+  box-shadow:0 10px 28px rgba(0,0,0,0.22);
+  transition:transform .22s ease, box-shadow .22s ease, border-color .22s ease, background .22s ease;
+}
+.dashboard-card:hover,
+.dashboard-card:focus{
+  transform:translateY(-3px);
+  border-color:rgba(0,175,241,0.35);
+  box-shadow:0 16px 36px rgba(0,0,0,0.34), 0 0 0 1px rgba(0,175,241,0.10), 0 0 28px rgba(0,175,241,0.12);
+  background:linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.025));
+}
+.dashboard-card::after{
+  content:'';
+  position:absolute;
+  left:14px;
+  right:14px;
+  bottom:0;
+  height:3px;
+  border-radius:999px;
+  background:linear-gradient(90deg, rgba(0,175,241,0), rgba(0,175,241,0.95), rgba(0,175,241,0));
+  box-shadow:0 0 14px rgba(0,175,241,0.35);
+  opacity:.65;
+  transition:opacity .22s ease, box-shadow .22s ease;
+}
+.dashboard-card:hover::after,
+.dashboard-card:focus::after{
+  opacity:1;
+  box-shadow:0 0 18px rgba(0,175,241,0.55), 0 0 30px rgba(0,175,241,0.18);
+}
+.dashboard-card__top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+.dashboard-card__badge{
+  display:inline-flex;
+  align-items:center;
+  padding:5px 10px;
+  border-radius:999px;
+  font-size:.78rem;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  background:rgba(54,199,108,0.14);
+  color:#8af0ad;
+  border:1px solid rgba(54,199,108,0.22);
+}
+.dashboard-card__link{font-size:.88rem;color:var(--primary);font-weight:700}
+.dashboard-card h3{margin:0 0 8px;font-size:1.15rem}
+.dashboard-card p{margin:0;color:var(--fg);opacity:.92;line-height:1.45}
+.dashboard-card__meta{margin-top:12px;color:var(--muted);font-size:.92rem}
+.dashboard-empty{
+  padding:18px;
+  border-radius:12px;
+  border:1px dashed rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.02);
+  color:var(--muted);
+}
