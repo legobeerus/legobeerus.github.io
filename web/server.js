@@ -301,7 +301,6 @@ function startApp(){
     const conditions = [];
     const params = [];
     let idx = 1;
-    if(phase){ conditions.push(`(exam_id ILIKE $${idx} OR exam_id = $${idx})`); params.push(`%phase${phase}%`); idx++ }
     if(status){ conditions.push(`status = $${idx++}`); params.push(status) }
     const where = conditions.length ? ('WHERE ' + conditions.join(' AND ')) : '';
     const sql = `SELECT id,
@@ -312,7 +311,12 @@ function startApp(){
       FROM exams_sessions ${where} ORDER BY created_at DESC LIMIT 200`;
       try{
         const q = await pgPool.query(sql, params);
-        return res.json(q.rows || []);
+        const rows = q.rows || [];
+        if(phase){
+          const phaseText = String(phase).toLowerCase().replace(/[^a-z0-9]+/g, '');
+          return res.json(rows.filter(row => String(row.exam_id || '').toLowerCase().replace(/[^a-z0-9]+/g, '').includes(`phase${phaseText}`) || String(row.exam_id || '').toLowerCase().includes(`phase ${phaseText}`)));
+        }
+        return res.json(rows);
       }catch(e){ console.error('DB list exams failed', e && e.message); return res.status(502).json({ error: 'db_error' }); }
   });
 

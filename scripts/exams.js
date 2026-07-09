@@ -47,8 +47,12 @@
   }
 
   function isPhaseExam(item, phaseNumber){
-    const haystack = `${item && item.exam_id ? item.exam_id : ''} ${item && item.examId ? item.examId : ''} ${item && item.id ? item.id : ''}`.toLowerCase()
-    return haystack.includes(`phase${phaseNumber}`)
+    const values = [item && item.exam_id, item && item.examId, item && item.id]
+      .filter(Boolean)
+      .map(v => String(v).toLowerCase())
+    const normalized = values.map(v => v.replace(/[^a-z0-9]+/g, ''))
+    const target = `phase${phaseNumber}`
+    return normalized.some(v => v === target || v.includes(target)) || values.some(v => v.includes(`phase ${phaseNumber}`) || v.includes(`phase-${phaseNumber}`) || v.includes(`phase_${phaseNumber}`))
   }
 
   function isActiveExam(item){
