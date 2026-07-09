@@ -536,6 +536,12 @@ function startApp(){
     if(text){
       try{ payload = JSON.parse(text); }catch(e){ payload = text; }
     }
+    console.log('Role lookup response', {
+      userId,
+      url,
+      status: response.status,
+      payload
+    });
     return { ok: response.ok, status: response.status, payload, url };
   }
 
