@@ -100,7 +100,38 @@
     return a
   }
 
+  function showAccessNoticeFromQuery(){
+    const params = new URLSearchParams(window.location.search)
+    const value = (params.get('access') || params.get('acess') || '').toLowerCase()
+    if(value !== 'denied') return
+
+    const host = document.querySelector('main') || document.body
+    if(!host) return
+
+    const notice = document.createElement('div')
+    notice.className = 'access-notice'
+    notice.setAttribute('role', 'alert')
+    notice.innerHTML = `
+      <div class="access-notice__content">
+        <strong>Access denied.</strong> Your Discord account does not have the required role for the dashboard.
+      </div>
+      <button type="button" class="access-notice__close" aria-label="Dismiss access notice">Dismiss</button>
+    `
+
+    const closeBtn = notice.querySelector('.access-notice__close')
+    closeBtn.addEventListener('click', ()=>{
+      notice.remove()
+      params.delete('access')
+      params.delete('acess')
+      const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}${window.location.hash || ''}`
+      history.replaceState({}, '', next)
+    })
+
+    host.insertBefore(notice, host.firstChild)
+  }
+
   async function init(){
+    showAccessNoticeFromQuery()
     const cta = ensureNavCta()
     if(!cta) return
     cta.innerHTML = ''

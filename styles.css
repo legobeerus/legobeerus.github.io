@@ -273,6 +273,34 @@ a:hover,a:focus,a:active{color:var(--accent);text-decoration:none}
 .grading .actions .btn:disabled{opacity:.6;filter:saturate(.8)}
 .grading .actions .btn-primary.is-submitting{letter-spacing:.02em}
 .grading .notice{color:#ff6b6b;margin:8px 0}
+.access-notice{
+  margin:20px auto 0;
+  width:calc(100% - 40px);
+  max-width:var(--max-width);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:12px 14px;
+  border-radius:10px;
+  border:1px solid rgba(234,76,76,0.32);
+  background:linear-gradient(180deg, rgba(72,20,20,0.7), rgba(46,14,14,0.7));
+  color:#ffd3d3;
+}
+.access-notice__content{line-height:1.35}
+.access-notice__close{
+  border:1px solid rgba(255,255,255,0.18);
+  background:rgba(255,255,255,0.06);
+  color:var(--fg);
+  border-radius:8px;
+  padding:6px 10px;
+  cursor:pointer;
+  font-weight:700;
+}
+.access-notice__close:hover,
+.access-notice__close:focus{
+  background:rgba(255,255,255,0.12);
+}
 .grading #previewArea pre{background:rgba(255,255,255,0.03);padding:12px;border-radius:8px;color:var(--fg)}
 .dm-preview-card{
   max-width:340px;
