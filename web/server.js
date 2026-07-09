@@ -32,6 +32,7 @@ const DATABASE_URL = envDatabaseUrl;
 let pgPool = null;
 let sessionStore = null;
 let hasExamSessionsTable = false;
+let examReviewsColumns = new Set();
 if(!envDatabaseUrl){
   console.warn('DATABASE_URL not set in environment; Postgres support is disabled.');
 } else {
@@ -67,6 +68,16 @@ if(!envDatabaseUrl){
           }).catch(()=>{});
         }
       }).catch(e=>{ console.warn('Failed to check exams_sessions table existence:', e && e.message) });
+
+      // discover exam_reviews columns so we can adapt inserts/updates to DB schema
+      pgPool.query(`SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='exam_reviews'`).then(cols=>{
+        if(cols && cols.rows){
+          cols.rows.forEach(r=>examReviewsColumns.add(r.column_name));
+        }
+        console.log('exam_reviews columns:', Array.from(examReviewsColumns));
+      }).catch(()=>{
+        console.log('exam_reviews table not present or inaccessible');
+      });
     }).catch(err=>{
       console.error('Database connection failed (auth or network). Postgres features disabled. Error:', err && err.message);
       testPool.end().catch(()=>{});
@@ -93,8 +104,14 @@ if(pgPool){
   }, DB_PING_INTERVAL_MS);
 }
 
+if(!sessionStore){
+  console.error('Fatal: session store is not configured (no Postgres session store).');
+  console.error('Remove in-memory fallback by setting the DATABASE_URL env var correctly. Exiting.');
+  process.exit(1);
+}
+
 app.use(session({
-  store: sessionStore || undefined,
+  store: sessionStore,
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
@@ -407,14 +424,48 @@ app.post('/api/exams/:id/grade', async (req, res)=>{
       console.warn('BOT_BASE_URL not configured; saving review locally only');
       data = { warning: 'BOT_BASE_URL not configured; review saved locally', review: reviewPayload };
     }
-    // persist grades to DB when available
+    // persist grades to DB when available, adapt to actual exam_reviews schema
     if(pgPool){
       try{
-        await pgPool.query(`INSERT INTO exam_reviews (session_id, reviewer_id, review, created_at, updated_at)
-          VALUES ($1,$2,$3,NOW(),NOW())
-          ON CONFLICT (session_id) DO UPDATE SET reviewer_id = EXCLUDED.reviewer_id, review = EXCLUDED.review, updated_at = NOW()`,
-          [req.params.id, req.session.user.id, JSON.stringify({ grades, feedback: reviewPayload.feedback, reviewer: { id: req.session.user.id, username: req.session.user.username, discriminator: req.session.user.discriminator } })]
-        );
+        const reviewer = { id: req.session.user.id, username: req.session.user.username, discriminator: req.session.user.discriminator };
+        // If table has a `review` JSONB column, write the full object there
+        if(examReviewsColumns.has('review')){
+          const reviewObj = { grades, feedback: reviewPayload.feedback, reviewer };
+          const upd = await pgPool.query(`UPDATE exam_reviews SET reviewer_id=$1, review=$2, updated_at=NOW() WHERE session_id=$3`, [req.session.user.id, JSON.stringify(reviewObj), req.params.id]);
+          if(upd.rowCount === 0){
+            await pgPool.query(`INSERT INTO exam_reviews (session_id, reviewer_id, review, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW())`, [req.params.id, req.session.user.id, JSON.stringify(reviewObj)]);
+          }
+        } else {
+          // Otherwise try to write to `scores` and `feedback` columns if present
+          const hasScores = examReviewsColumns.has('scores');
+          const hasFeedback = examReviewsColumns.has('feedback');
+          if(!hasScores && !hasFeedback){
+            throw new Error('exam_reviews table missing writable review columns (scores|feedback|review)');
+          }
+          // Try update first
+          const updParts = [];
+          const updVals = [];
+          let paramIdx = 1;
+          if(examReviewsColumns.has('reviewer_id')){ updParts.push(`reviewer_id=$${paramIdx++}`); updVals.push(req.session.user.id) }
+          if(hasScores){ updParts.push(`scores=$${paramIdx++}`); updVals.push(JSON.stringify(grades)) }
+          if(hasFeedback){ updParts.push(`feedback=$${paramIdx++}`); updVals.push(reviewPayload.feedback || '') }
+          // add session_id as last param for WHERE
+          updVals.push(req.params.id);
+          const updSql = `UPDATE exam_reviews SET ${updParts.join(', ')}, updated_at=NOW() WHERE session_id=$${paramIdx}`;
+          const updRes = await pgPool.query(updSql, updVals);
+          if(updRes.rowCount === 0){
+            // Insert
+            const insertCols = ['session_id'];
+            const insertVals = ['$1'];
+            const insertParams = [req.params.id];
+            let nextIdx = 2;
+            if(examReviewsColumns.has('reviewer_id')){ insertCols.push('reviewer_id'); insertVals.push(`$${nextIdx++}`); insertParams.push(req.session.user.id) }
+            if(hasScores){ insertCols.push('scores'); insertVals.push(`$${nextIdx++}`); insertParams.push(JSON.stringify(grades)) }
+            if(hasFeedback){ insertCols.push('feedback'); insertVals.push(`$${nextIdx++}`); insertParams.push(reviewPayload.feedback || '') }
+            const insSql = `INSERT INTO exam_reviews (${insertCols.join(',')}) VALUES (${insertVals.join(',')})`;
+            await pgPool.query(insSql, insertParams);
+          }
+        }
       }catch(e){ console.error('Failed to persist review to DB for session', req.params.id, e && e.message) }
       try{
         await pgPool.query(`UPDATE exams_sessions SET payload = payload::jsonb || $1 WHERE id = $2`, [JSON.stringify({ status: 'graded' }), req.params.id]);
