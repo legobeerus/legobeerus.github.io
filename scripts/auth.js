@@ -103,10 +103,8 @@
 
   function createAccessDeniedBadge(){
     const span = document.createElement('span')
-    span.className = 'btn'
-    span.style.opacity = '0.8'
-    span.style.cursor = 'not-allowed'
-    span.textContent = 'Access denied'
+    span.className = 'auth-denied'
+    span.textContent = 'Role required'
     return span
   }
 
