@@ -23,7 +23,7 @@
       const li = document.createElement('li')
       const a = document.createElement('a')
       a.href = `grade.html?session=${encodeURIComponent(it.id)}`
-      a.textContent = `${it.id} — ${it.candidate_mention || it.candidate || 'unknown'} (${it.created_at || ''})`
+      a.textContent = `${it.id} — ${it.candidate_mention || it.candidate || it.candidate_name || it.userId || 'unknown'} (${it.created_at || ''})`
       li.appendChild(a)
       ul.appendChild(li)
     })

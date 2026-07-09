@@ -84,8 +84,10 @@
       const resp = await fetch(`${AUTH_SERVER}/api/exams/${encodeURIComponent(sessionId)}/grade`,{
         method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({grades: scores, feedback}), credentials: 'include'
       })
-      const data = await resp.json()
-      if(!resp.ok){ resultEl.textContent = `Error: ${data.message || resp.status}`; return }
+      const text = await resp.text()
+      let data
+      try{ data = JSON.parse(text) }catch(_){ data = { error: text } }
+      if(!resp.ok){ resultEl.textContent = `Error: ${data.message || data.error || resp.status}`; return }
       resultEl.textContent = `Submitted. Result: ${JSON.stringify(data)}`
     }catch(e){ console.error(e); resultEl.textContent='Submission failed' }
   })

@@ -27,11 +27,18 @@ app.use(bodyParser.json());
 const isSecure = (BASE_URL||'').startsWith('https');
 
 // Try to use Postgres-backed session store when DATABASE_URL is provided (Railway)
-const DATABASE_URL = process.env.DATABASE_URL || "postgresql://postgres:qSqlBEBelbTrColIMGzrUXfAYcJFYqEu@postgres.railway.internal:5432/railway";
+const envDatabaseUrl = process.env.DATABASE_URL;
+const DATABASE_URL = envDatabaseUrl;
 let pgPool = null;
 let sessionStore = null;
+let hasExamSessionsTable = false;
+if(!envDatabaseUrl){
+  console.warn('DATABASE_URL not set in environment; Postgres support is disabled.');
+}
 if(DATABASE_URL){
   try{
+    const safeDb = DATABASE_URL.replace(/(postgresql:\/\/[^:]+:)[^@]+@/, '$1*****@');
+    console.log('Connecting to database:', safeDb);
     const PgStore = require('connect-pg-simple')(session);
     const { Pool } = require('pg');
     pgPool = new Pool({ connectionString: DATABASE_URL });
@@ -40,6 +47,15 @@ if(DATABASE_URL){
     // ensure a simple users table exists for optional user persistence
     pgPool.query(`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT, discriminator TEXT, avatar TEXT, updated_at TIMESTAMP DEFAULT NOW())`).catch(e=>{ console.warn('users table check failed', e && e.message) });
     pgPool.query(`CREATE TABLE IF NOT EXISTS exam_reviews (session_id TEXT PRIMARY KEY, reviewer_id TEXT, review JSONB, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())`).catch(e=>{ console.warn('exam_reviews table check failed', e && e.message) });
+    pgPool.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='exams_sessions') AS exists`).then(r=>{
+      hasExamSessionsTable = r.rows[0] && r.rows[0].exists;
+      console.log('exams_sessions table exists:', hasExamSessionsTable);
+      if(!hasExamSessionsTable){
+        pgPool.query(`SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname='public'`).then(list=>{
+          console.log('Public tables:', list.rows.map(row=>row.tablename));
+        }).catch(()=>{});
+      }
+    }).catch(e=>{ console.warn('Failed to check exams_sessions table existence:', e && e.message) });
   }catch(e){
     console.warn('Postgres session store not available:', e && e.message);
     pgPool = null; sessionStore = null;
@@ -242,7 +258,7 @@ app.get('/api/exams', async (req, res)=>{
       payload::jsonb->>'examId' AS examId,
       payload::jsonb->>'status' AS status,
       COALESCE(payload::jsonb->>'candidate_mention', payload::jsonb->>'candidateMention', payload::jsonb->>'candidate', payload::jsonb->>'candidate_name', payload::jsonb->>'userId') AS candidate_mention,
-      COALESCE(payload::jsonb->>'createdAt', to_char(created_at, 'YYYYMMDDHH24MISS')) AS createdAt
+      COALESCE(payload::jsonb->>'createdAt', to_char(created_at, 'YYYYMMDDHH24MISS')) AS created_at
       FROM exams_sessions ${where} ORDER BY created_at DESC LIMIT 200`;
     try{
       const q = await pgPool.query(sql, params);
@@ -270,9 +286,18 @@ function normalizeExamPayload(payload, examId){
   };
 
   const questions = [];
-  const prompts = Array.isArray(payload.questions) ? payload.questions : null;
-  const answers = Array.isArray(payload.answers) ? payload.answers : null;
-  const responses = Array.isArray(payload.responses) ? payload.responses : null;
+  const toArray = value => {
+    if(Array.isArray(value)) return value;
+    if(value && typeof value === 'object'){
+      return Object.keys(value)
+        .sort((a,b)=>Number(a) - Number(b))
+        .map(key=>value[key]);
+    }
+    return null;
+  };
+  const prompts = toArray(payload.questions);
+  const answers = toArray(payload.answers);
+  const responses = toArray(payload.responses);
 
   if(prompts && answers){
     const answerMap = new Map();
@@ -312,7 +337,11 @@ app.get('/api/exams/:id', async (req, res)=>{
     try{
       let q = await pgPool.query('SELECT id, payload, created_at FROM exams_sessions WHERE id = $1 LIMIT 1', [examId]);
       if(q.rowCount === 0){
-        q = await pgPool.query('SELECT id, payload, created_at FROM exams_sessions WHERE payload::jsonb->>\'examId\' = $1 LIMIT 1', [examId]);
+        q = await pgPool.query(`SELECT id, payload, created_at FROM exams_sessions
+          WHERE payload::jsonb->>'examId' = $1
+          OR payload::jsonb->>'exam_id' = $1
+          OR payload::jsonb->>'exam' = $1
+          LIMIT 1`, [examId]);
       }
       if(q.rowCount>0){
         const row = q.rows[0];
@@ -342,34 +371,43 @@ app.get('/api/exams/:id', async (req, res)=>{
 app.post('/api/exams/:id/grade', async (req, res)=>{
   if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
   const botBase = process.env.BOT_BASE_URL;
-  if(!botBase) return res.status(500).json({ error: 'BOT_BASE_URL not configured on server' });
   const payload = req.body || {};
   const grades = Array.isArray(payload.grades) ? payload.grades : Array.isArray(payload.scores) ? payload.scores : null;
   if(!grades) return res.status(400).json({ error: 'missing grades array' });
   const reviewPayload = { grades, scores: grades, feedback: payload.feedback || '' };
-  const url = `${botBase.replace(/\/$/,'')}/exams/${encodeURIComponent(req.params.id)}/grade`;
-  console.log('Proxy POST to bot:', url, 'from user', req.session.user.id);
+  const shouldProxyBot = Boolean(botBase);
+  const url = botBase ? `${botBase.replace(/\/$/,'')}/exams/${encodeURIComponent(req.params.id)}/grade` : null;
+  if(shouldProxyBot) console.log('Proxy POST to bot:', url, 'from user', req.session.user.id);
   try{
-    const bresp = await fetch(url, { method: 'POST', headers: { 'Content-Type':'application/json', 'x-discord-token': req.session.accessToken }, body: JSON.stringify(reviewPayload) });
-    const txt = await bresp.text().catch(()=>null);
-    let data = null;
-    try{ data = txt ? JSON.parse(txt) : null }catch(e){ data = txt }
-    if(!bresp.ok){ console.log('Bot POST returned', bresp.status, txt); }
+    let bresp = { ok: true, status: 200 };
+    let data = { success: true, saved: true };
+    if(shouldProxyBot){
+      bresp = await fetch(url, { method: 'POST', headers: { 'Content-Type':'application/json', 'x-discord-token': req.session.accessToken }, body: JSON.stringify(reviewPayload) });
+      const txt = await bresp.text().catch(()=>null);
+      try{ data = txt ? JSON.parse(txt) : txt }catch(e){ data = txt }
+      if(!bresp.ok){ console.log('Bot POST returned', bresp.status, data); }
+    } else {
+      console.warn('BOT_BASE_URL not configured; saving review locally only');
+      data = { warning: 'BOT_BASE_URL not configured; review saved locally', review: reviewPayload };
+    }
     // persist grades to DB when available
-    if(bresp.ok && pgPool){
+    if(pgPool){
       try{
         await pgPool.query(`INSERT INTO exam_reviews (session_id, reviewer_id, review, created_at, updated_at)
           VALUES ($1,$2,$3,NOW(),NOW())
           ON CONFLICT (session_id) DO UPDATE SET reviewer_id = EXCLUDED.reviewer_id, review = EXCLUDED.review, updated_at = NOW()`,
           [req.params.id, req.session.user.id, JSON.stringify({ grades, feedback: reviewPayload.feedback, reviewer: { id: req.session.user.id, username: req.session.user.username, discriminator: req.session.user.discriminator } })]
         );
-      }catch(e){ console.warn('Failed to persist review to DB', e && e.message) }
+      }catch(e){ console.error('Failed to persist review to DB for session', req.params.id, e && e.message) }
       try{
         await pgPool.query(`UPDATE exams_sessions SET payload = payload::jsonb || $1 WHERE id = $2`, [JSON.stringify({ status: 'graded' }), req.params.id]);
-      }catch(e){ console.warn('Failed to mark exam graded', e && e.message) }
+      }catch(e){ console.error('Failed to mark exam graded for session', req.params.id, e && e.message) }
+    }
+    if(!shouldProxyBot){
+      return res.status(200).json(data);
     }
     return res.status(bresp.status).json(data);
-  }catch(err){ console.error('proxy POST error', err); return res.status(502).json({ error: 'bad_gateway' }); }
+  }catch(err){ console.error('grade submission error for session', req.params.id, err); return res.status(502).json({ error: 'bad_gateway' }); }
 });
 
 // Fallback: serve index.html for any other unmatched GET (SPA-style)
