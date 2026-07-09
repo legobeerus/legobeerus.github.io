@@ -242,8 +242,8 @@ app.get('/api/exams', async (req, res)=>{
       payload::jsonb->>'examId' AS examId,
       payload::jsonb->>'status' AS status,
       COALESCE(payload::jsonb->>'candidate_mention', payload::jsonb->>'candidateMention', payload::jsonb->>'candidate', payload::jsonb->>'candidate_name', payload::jsonb->>'userId') AS candidate_mention,
-      payload::jsonb->>'createdAt' AS createdAt
-      FROM exams_sessions ${where} ORDER BY (payload::jsonb->>'createdAt')::bigint DESC LIMIT 200`;
+      COALESCE(payload::jsonb->>'createdAt', to_char(created_at, 'YYYYMMDDHH24MISS')) AS createdAt
+      FROM exams_sessions ${where} ORDER BY created_at DESC LIMIT 200`;
     try{
       const q = await pgPool.query(sql, params);
       return res.json(q.rows || []);
@@ -310,7 +310,10 @@ app.get('/api/exams/:id', async (req, res)=>{
   const examId = req.params.id;
   if(pgPool){
     try{
-      const q = await pgPool.query('SELECT id, payload, created_at FROM exams_sessions WHERE id = $1 LIMIT 1', [examId]);
+      let q = await pgPool.query('SELECT id, payload, created_at FROM exams_sessions WHERE id = $1 LIMIT 1', [examId]);
+      if(q.rowCount === 0){
+        q = await pgPool.query('SELECT id, payload, created_at FROM exams_sessions WHERE payload::jsonb->>\'examId\' = $1 LIMIT 1', [examId]);
+      }
       if(q.rowCount>0){
         const row = q.rows[0];
         const payload = typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload;
@@ -343,7 +346,7 @@ app.post('/api/exams/:id/grade', async (req, res)=>{
   const payload = req.body || {};
   const grades = Array.isArray(payload.grades) ? payload.grades : Array.isArray(payload.scores) ? payload.scores : null;
   if(!grades) return res.status(400).json({ error: 'missing grades array' });
-  const reviewPayload = { grades, feedback: payload.feedback || '' };
+  const reviewPayload = { grades, scores: grades, feedback: payload.feedback || '' };
   const url = `${botBase.replace(/\/$/,'')}/exams/${encodeURIComponent(req.params.id)}/grade`;
   console.log('Proxy POST to bot:', url, 'from user', req.session.user.id);
   try{
