@@ -78,8 +78,26 @@
         window.location.href = `${AUTH_SERVER}/auth/discord?next=${encodeURIComponent(location.pathname+location.search)}`
         return
       }
+      if(meResp.status === 403){
+        profileName.textContent = 'Access denied'
+        profileHandle.textContent = 'Your Discord account does not have the required server role.'
+        profileBio.textContent = 'This profile page is locked to members with the approved role in the target server.'
+        renderChips(profileRoles, [])
+        profileStats.innerHTML = ''
+        recentSubmissions.innerHTML = '<div class="profile-empty">Access denied.</div>'
+        return
+      }
       const me = await meResp.json()
       const profileResp = await fetch(`${AUTH_SERVER}/api/profile`, { credentials: 'include' })
+      if(profileResp.status === 403){
+        profileName.textContent = 'Access denied'
+        profileHandle.textContent = 'Your Discord account does not have the required server role.'
+        profileBio.textContent = 'This profile page is locked to members with the approved role in the target server.'
+        renderChips(profileRoles, [])
+        profileStats.innerHTML = ''
+        recentSubmissions.innerHTML = '<div class="profile-empty">Access denied.</div>'
+        return
+      }
       if(!profileResp.ok) throw new Error('profile fetch failed')
       const profile = await profileResp.json()
 

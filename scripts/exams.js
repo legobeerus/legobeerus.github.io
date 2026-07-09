@@ -28,7 +28,8 @@
   async function ensureAuth(){
     try{
       const r = await fetch(`${AUTH_SERVER}/api/me`, { credentials: 'include' })
-      if(r.status===204) { window.location.href = `${AUTH_SERVER}/auth/discord?next=${encodeURIComponent(location.pathname+location.search)}`; return null }
+      if(r.status===204 || r.status===401) { window.location.href = `${AUTH_SERVER}/auth/discord?next=${encodeURIComponent(location.pathname+location.search)}`; return null }
+      if(r.status===403) { statusMsg.textContent = 'Access denied: your Discord account is missing the required server role.'; return null }
       return await r.json()
     }catch(e){ console.error(e); statusMsg.textContent='Auth check failed'; return null }
   }
@@ -104,6 +105,12 @@
 
     try{
       const resp = await fetch(`${AUTH_SERVER}/api/exams`, { credentials: 'include' })
+      if(resp.status === 403){
+        statusMsg.textContent = 'Access denied: your Discord account is missing the required server role.'
+        renderList(phase1List, [])
+        renderList(phase4List, [])
+        return
+      }
       if(!resp.ok){
         statusMsg.textContent = `Failed to load exams (${resp.status})`
         renderList(phase1List, [])

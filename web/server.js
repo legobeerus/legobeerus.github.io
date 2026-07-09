@@ -15,6 +15,10 @@ const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
 const SESSION_SECRET = process.env.SESSION_SECRET || 'devsecret';
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+const BOT_BASE_URL = process.env.BOT_BASE_URL || '';
+const BOT_API_TOKEN = process.env.BOT_API_TOKEN || process.env.DISCORD_BOT_TOKEN || '';
+const REQUIRED_GUILD_ID = process.env.GUILD_ID || process.env.BOT_API_DEFAULT_GUILD_ID || '';
+const REQUIRED_ROLE_IDS = new Set(String(process.env.ALLOWED_ROLE_IDS || '').split(',').map(value => value.trim()).filter(Boolean));
 
 if(!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET){
   console.warn('Warning: DISCORD_CLIENT_ID or DISCORD_CLIENT_SECRET not set. OAuth will not work until configured.');
@@ -188,6 +192,23 @@ function startApp(){
     // fallback: static files may already be copied into parent folder (e.g. Docker build context)
     siteRoot = path.join(__dirname, '..');
   }
+
+  app.use(async (req, res, next)=>{
+    const protectedPages = new Set(['/exams.html', '/grade.html', '/profile.html']);
+    if(!protectedPages.has(req.path)) return next();
+    if(!req.session || !req.session.user) return res.redirect('/');
+    try{
+      const access = await verifyGuildRoleAccess(req.session.user.id);
+      if(access.allowed) return next();
+      console.warn('Blocked protected page', req.path, 'for user', req.session.user.id, access.status, access.error || 'forbidden');
+      if(access.status >= 500) return res.status(access.status).send('Role verification unavailable');
+      return res.redirect('/?access=denied');
+    }catch(e){
+      console.error('Protected page access check failed', e && e.message);
+      return res.status(503).send('Role verification unavailable');
+    }
+  });
+
   app.use(express.static(siteRoot));
   // Log useful startup info and check important static files
   const fs = require('fs');
@@ -296,9 +317,17 @@ function startApp(){
   app.get('/api/me', (req, res)=>{
     if(req.session && req.session.user){
       console.log('/api/me - returning user', req.session.user.id);
-      res.json(req.session.user);
-    }
-    else {
+      verifyGuildRoleAccess(req.session.user.id).then(access=>{
+        if(!access.allowed){
+          console.warn('/api/me - access denied for user', req.session.user.id, access.status, access.error || 'forbidden');
+          return res.status(access.status >= 500 ? access.status : 403).json({ error: access.status >= 500 ? 'role_check_unavailable' : 'forbidden' });
+        }
+        return res.json(req.session.user);
+      }).catch(e=>{
+        console.error('/api/me - access check failed', e && e.message);
+        return res.status(503).json({ error: 'role_check_unavailable' });
+      });
+    } else {
       console.log('/api/me - no session');
       res.status(204).json(null);
     }
@@ -306,6 +335,8 @@ function startApp(){
 
   app.get('/api/profile', async (req, res)=>{
     if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
+    const access = await verifyGuildRoleAccess(req.session.user.id);
+    if(!access.allowed) return res.status(access.status >= 500 ? access.status : 403).json({ error: access.status >= 500 ? 'role_check_unavailable' : 'forbidden' });
     if(!pgPool) return res.json({ user: req.session.user, stats: null, recentSubmissions: [], roles: [] });
     try{
       const user = req.session.user;
@@ -365,6 +396,8 @@ function startApp(){
   // List exams (from DB)
   app.get('/api/exams', async (req, res)=>{
     if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
+    const access = await verifyGuildRoleAccess(req.session.user.id);
+    if(!access.allowed) return res.status(access.status >= 500 ? access.status : 403).json({ error: access.status >= 500 ? 'role_check_unavailable' : 'forbidden' });
     if(!pgPool) return res.status(500).json({ error: 'server not configured to read DB' });
     const status = req.query.status || null;
     const phase = req.query.phase || null;
@@ -457,9 +490,57 @@ function startApp(){
     return questions.reduce((sum, q)=> sum + (Number(q && q.maxScore != null ? q.maxScore : 1) || 1), 0);
   }
 
+  async function verifyGuildRoleAccess(userId){
+    if(!userId) return { allowed: false, status: 401, error: 'unauthenticated' };
+    if(!BOT_BASE_URL) return { allowed: false, status: 503, error: 'BOT_BASE_URL not configured' };
+    if(!BOT_API_TOKEN) return { allowed: false, status: 503, error: 'BOT_API_TOKEN not configured' };
+    if(!REQUIRED_GUILD_ID) return { allowed: false, status: 503, error: 'GUILD_ID not configured' };
+    if(!REQUIRED_ROLE_IDS.size) return { allowed: false, status: 503, error: 'ALLOWED_ROLE_IDS not configured' };
+
+    const url = `${BOT_BASE_URL.replace(/\/$/, '')}/api/guilds/${encodeURIComponent(REQUIRED_GUILD_ID)}/members/${encodeURIComponent(userId)}/roles`;
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${BOT_API_TOKEN}`,
+        Accept: 'application/json'
+      }
+    });
+    const text = await response.text().catch(()=> '');
+    let payload = null;
+    if(text){
+      try{
+        payload = JSON.parse(text);
+      }catch(e){
+        payload = text;
+      }
+    }
+
+    if(!response.ok){
+      return {
+        allowed: false,
+        status: response.status === 401 || response.status === 403 ? 403 : 502,
+        error: 'bot_role_lookup_failed',
+        details: payload
+      };
+    }
+
+    const roles = Array.isArray(payload && payload.roles)
+      ? payload.roles.map(role => String(role))
+      : Array.isArray(payload && payload.roleIds)
+        ? payload.roleIds.map(role => String(role))
+        : Array.isArray(payload)
+          ? payload.map(role => String(role))
+          : [];
+    const matched = roles.filter(roleId => REQUIRED_ROLE_IDS.has(String(roleId)));
+    const allowed = typeof (payload && payload.allowed) === 'boolean' ? payload.allowed : matched.length > 0;
+
+    return { allowed, status: allowed ? 200 : 403, roles, matched, details: payload };
+  }
+
   // Fetch single exam: prefer DB row, fallback to bot
   app.get('/api/exams/:id', async (req, res)=>{
     if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
+    const access = await verifyGuildRoleAccess(req.session.user.id);
+    if(!access.allowed) return res.status(access.status >= 500 ? access.status : 403).json({ error: access.status >= 500 ? 'role_check_unavailable' : 'forbidden' });
     const examId = req.params.id;
     if(pgPool){
       try{
@@ -498,6 +579,8 @@ function startApp(){
   // Proxy: submit grading results to the bot
   app.post('/api/exams/:id/grade', async (req, res)=>{
     if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
+    const access = await verifyGuildRoleAccess(req.session.user.id);
+    if(!access.allowed) return res.status(access.status >= 500 ? access.status : 403).json({ error: access.status >= 500 ? 'role_check_unavailable' : 'forbidden' });
     const botBase = process.env.BOT_BASE_URL;
     const payload = req.body || {};
     const grades = Array.isArray(payload.grades) ? payload.grades : Array.isArray(payload.scores) ? payload.scores : null;
