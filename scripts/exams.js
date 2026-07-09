@@ -100,7 +100,7 @@
     statusMsg.textContent = 'Checking login...'
     const user = await ensureAuth()
     if(!user) return
-    statusMsg.textContent = `Signed in as ${user.username}#${user.discriminator}`
+    statusMsg.textContent = `Signed in as ${user.username}#${user.discriminator}. Active reviews ready.`
 
     try{
       const resp = await fetch(`${AUTH_SERVER}/api/exams`, { credentials: 'include' })
@@ -118,7 +118,6 @@
 
       renderList(phase1List, mergeUniqueLists([phase1Items]))
       renderList(phase4List, mergeUniqueLists([phase4Items]))
-      statusMsg.textContent = `Loaded ${items.length} exams. Showing ${phase1Items.length} active review(s) in Phase 1 and ${phase4Items.length} in Phase 4.`
     }catch(e){ console.error(e); statusMsg.textContent='Failed to load exams' }
   }
 

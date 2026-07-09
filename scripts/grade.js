@@ -11,6 +11,7 @@
   const previewArea = byId('previewArea')
   const previewText = byId('previewText')
   const resultEl = byId('result')
+  const submitBtn = form.querySelector('[type=submit]')
   let currentUser = null
 
   sessionLabel.textContent = sessionId ? `Session: ${sessionId}` : 'No session specified.'
@@ -113,7 +114,6 @@
   function escapeHtml(s){ return (s||'').replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"})[c]) }
   function setFormControlsEnabled(enabled){
     previewBtn.disabled = !enabled
-    const submitBtn = form.querySelector('[type=submit]')
     if(submitBtn){
       submitBtn.disabled = !enabled
       if(enabled){
@@ -186,16 +186,22 @@
     const feedback = byId('feedback').value || ''
     try{
       setFormControlsEnabled(false)
+      form.classList.add('is-submitting')
+      if(submitBtn) submitBtn.textContent = 'Submitting...'
       const resp = await fetch(`${AUTH_SERVER}/api/exams/${encodeURIComponent(sessionId)}/grade`,{
         method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scores, feedback}), credentials: 'include'
       })
       const text = await resp.text()
       let data
       try{ data = JSON.parse(text) }catch(_){ data = { error: text } }
-      if(!resp.ok){ resultEl.textContent = `Error: ${data.message || data.error || resp.status}`; setFormControlsEnabled(true); return }
+      if(!resp.ok){ resultEl.textContent = `Error: ${data.message || data.error || resp.status}`; setFormControlsEnabled(true); form.classList.remove('is-submitting'); if(submitBtn) submitBtn.textContent = 'Submit Grades'; return }
       resultEl.textContent = 'Submitted successfully.'
       setFormControlsEnabled(false)
     }catch(e){ console.error(e); resultEl.textContent='Submission failed'; setFormControlsEnabled(true) }
+    finally{
+      form.classList.remove('is-submitting')
+      if(submitBtn && submitBtn.textContent === 'Submitting...') submitBtn.textContent = 'Submit Grades'
+    }
   })
 
   fetchCurrentUser()

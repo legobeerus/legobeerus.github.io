@@ -229,6 +229,49 @@ a:hover,a:focus,a:active{color:var(--accent);text-decoration:none}
 }
 .grading input[type=number].score-over-max:focus{box-shadow:0 0 0 3px rgba(234,76,76,0.24), 0 0 22px rgba(234,76,76,0.24)}
 .grading .actions{margin-top:16px;display:flex;gap:8px}
+.grading .actions .btn{
+  position:relative;
+  overflow:hidden;
+  min-width:140px;
+  transition:transform .18s ease, box-shadow .18s ease, filter .18s ease, background-color .18s ease, color .18s ease;
+}
+.grading .actions .btn::before{
+  content:'';
+  position:absolute;
+  inset:-40% -20%;
+  background:linear-gradient(120deg, transparent 35%, rgba(255,255,255,0.12) 50%, transparent 65%);
+  transform:translateX(-30%) rotate(8deg);
+  opacity:0;
+  transition:opacity .18s ease, transform .45s ease;
+  pointer-events:none;
+}
+.grading .actions .btn:hover::before,
+.grading .actions .btn:focus::before{opacity:1;transform:translateX(20%) rotate(8deg)}
+.grading .actions .btn:hover,
+.grading .actions .btn:focus{
+  transform:translateY(-2px);
+  box-shadow:0 12px 28px rgba(0,0,0,0.22);
+}
+.grading .actions .btn:active{transform:translateY(0);box-shadow:0 6px 16px rgba(0,0,0,0.18)}
+.grading .actions .btn-primary{
+  background:linear-gradient(180deg, rgba(0,175,241,1), rgba(0,150,214,1));
+  box-shadow:0 10px 22px rgba(0,175,241,0.24);
+}
+.grading .actions .btn-primary:hover,.grading .actions .btn-primary:focus{
+  filter:brightness(1.05);
+  box-shadow:0 14px 30px rgba(0,175,241,0.34);
+}
+.grading .actions .btn-ghost{
+  border-color:rgba(255,255,255,0.14);
+  background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015));
+}
+.grading .actions .btn-ghost:hover,.grading .actions .btn-ghost:focus{
+  border-color:rgba(245,215,122,0.4);
+  background:linear-gradient(180deg, rgba(245,215,122,0.12), rgba(255,255,255,0.03));
+}
+.grading .actions .btn.disabled,
+.grading .actions .btn:disabled{opacity:.6;filter:saturate(.8)}
+.grading .actions .btn-primary.is-submitting{letter-spacing:.02em}
 .grading .notice{color:#ff6b6b;margin:8px 0}
 .grading #previewArea pre{background:rgba(255,255,255,0.03);padding:12px;border-radius:8px;color:var(--fg)}
 .grading #questions{margin-top:12px}
