@@ -36,6 +36,7 @@ let pgPool = null;
 let sessionStore = null;
 let hasExamSessionsTable = false;
 let examReviewsColumns = new Set();
+let examReviewsMeta = {}; // column_name -> { is_nullable, column_default }
 if(!envDatabaseUrl){
   console.warn('DATABASE_URL not set in environment; Postgres support is disabled.');
 } else {
@@ -72,12 +73,16 @@ if(!envDatabaseUrl){
         }
       }).catch(e=>{ console.warn('Failed to check exams_sessions table existence:', e && e.message) });
 
-      // discover exam_reviews columns so we can adapt inserts/updates to DB schema
-      pgPool.query(`SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='exam_reviews'`).then(cols=>{
+      // discover exam_reviews columns and metadata so we can adapt inserts/updates to DB schema
+      pgPool.query(`SELECT column_name, is_nullable, column_default FROM information_schema.columns WHERE table_schema='public' AND table_name='exam_reviews'`).then(cols=>{
         if(cols && cols.rows){
-          cols.rows.forEach(r=>examReviewsColumns.add(r.column_name));
+          cols.rows.forEach(r=>{
+            examReviewsColumns.add(r.column_name);
+            examReviewsMeta[r.column_name] = { is_nullable: r.is_nullable, column_default: r.column_default };
+          });
         }
         console.log('exam_reviews columns:', Array.from(examReviewsColumns));
+        console.log('exam_reviews meta:', examReviewsMeta);
       }).catch(()=>{
         console.log('exam_reviews table not present or inaccessible');
       });
@@ -447,7 +452,19 @@ function startApp(){
             const reviewObj = { grades, feedback: reviewPayload.feedback, reviewer };
             const upd = await pgPool.query(`UPDATE exam_reviews SET reviewer_id=$1, review=$2 WHERE session_id=$3`, [req.session.user.id, JSON.stringify(reviewObj), req.params.id]);
             if(upd.rowCount === 0){
-              await pgPool.query(`INSERT INTO exam_reviews (session_id, reviewer_id, review) VALUES ($1,$2,$3)`, [req.params.id, req.session.user.id, JSON.stringify(reviewObj)]);
+              // if `id` column exists and is required without default, generate one
+              let insParams = [req.params.id, req.session.user.id, JSON.stringify(reviewObj)];
+              if(examReviewsColumns.has('id')){
+                const meta = examReviewsMeta['id'];
+                if(meta && meta.is_nullable === 'NO' && !meta.column_default){
+                  const newId = require('crypto').randomUUID();
+                  await pgPool.query(`INSERT INTO exam_reviews (id, session_id, reviewer_id, review) VALUES ($1,$2,$3,$4)`, [newId, ...insParams]);
+                } else {
+                  await pgPool.query(`INSERT INTO exam_reviews (session_id, reviewer_id, review) VALUES ($1,$2,$3)`, insParams);
+                }
+              } else {
+                await pgPool.query(`INSERT INTO exam_reviews (session_id, reviewer_id, review) VALUES ($1,$2,$3)`, insParams);
+              }
             }
           } else {
             // Otherwise try to write to `scores` and `feedback` columns if present
@@ -476,7 +493,19 @@ function startApp(){
               if(examReviewsColumns.has('reviewer_id')){ insertCols.push('reviewer_id'); insertVals.push(`$${nextIdx++}`); insertParams.push(req.session.user.id) }
               if(hasScores){ insertCols.push('scores'); insertVals.push(`$${nextIdx++}`); insertParams.push(JSON.stringify(grades)) }
               if(hasFeedback){ insertCols.push('feedback'); insertVals.push(`$${nextIdx++}`); insertParams.push(reviewPayload.feedback || '') }
-              const insSql = `INSERT INTO exam_reviews (${insertCols.join(',')}) VALUES (${insertVals.join(',')})`;
+              // if `id` column exists and is required without default, generate and include it
+              if(examReviewsColumns.has('id')){
+                const meta = examReviewsMeta['id'];
+                if(meta && meta.is_nullable === 'NO' && !meta.column_default){
+                  const newId = require('crypto').randomUUID();
+                  // prepend id as first column and value
+                  insertCols.unshift('id');
+                  insertParams.unshift(newId);
+                }
+              }
+              // build placeholder list matching insertParams length
+              const finalPlaceholders = insertParams.map((_, i)=>`$${i+1}`);
+              const insSql = `INSERT INTO exam_reviews (${insertCols.join(',')}) VALUES (${finalPlaceholders.join(',')})`;
               await pgPool.query(insSql, insertParams);
             }
           }
