@@ -11,6 +11,7 @@
   const previewArea = byId('previewArea')
   const previewText = byId('previewText')
   const resultEl = byId('result')
+  let currentUser = null
 
   sessionLabel.textContent = sessionId ? `Session: ${sessionId}` : 'No session specified.'
 
@@ -20,7 +21,14 @@
 
   function renderExam(data){
     exam = data
-    reviewerEl.textContent = data.reviewer ? `${data.reviewer.username}#${data.reviewer.discriminator}` : 'Reviewer'
+    if(currentUser){
+      const tag = currentUser.discriminator ? `#${currentUser.discriminator}` : ''
+      reviewerEl.textContent = `${currentUser.username || 'Reviewer'}${tag}`
+    } else if(data.reviewer){
+      reviewerEl.textContent = `${data.reviewer.username}#${data.reviewer.discriminator}`
+    } else {
+      reviewerEl.textContent = ''
+    }
     const candidate = data.candidateMention || data.candidate_name || data.userId || (data.user && data.user.username) || 'unknown'
     sessionLabel.textContent = `Session: ${data.examId || data.id || sessionId} — Candidate: ${candidate}`
 
@@ -51,8 +59,6 @@
       let scoreInput = ''
       if(isText){
         scoreInput = `<label>Score: <input type="number" min="0" max="${maxScore}" step="1" name="score" data-index="${idx}" value="0"></label>`
-      } else if(isMC){
-        scoreInput = `<div class="mc-score">Auto-graded MC question (max ${maxScore})</div>`
       }
 
       let choicesHtml = ''
@@ -73,12 +79,12 @@
 
       const isCorrectAnswer = isMC && answerNormalized !== '' && (answerNormalized === correctNormalized || answerNormalized === String(correctAnswerRaw).trim())
       const mcStatus = isMC
-        ? `<div class="mc-result">${isCorrectAnswer ? 'Correct' : 'Incorrect'}</div>`
+        ? `<div class="mc-result">${isCorrectAnswer ? 'Correct' : 'Incorrect'} - ${isCorrectAnswer ? maxScore : 0} points</div>`
         : ''
 
       if(isMC){
+        div.classList.add('mc-question', isCorrectAnswer ? 'mc-correct' : 'mc-incorrect')
         q._autoScore = isCorrectAnswer ? maxScore : 0
-        scoreInput = `<div class="mc-score">Auto-graded MC question (max ${maxScore}) — Awarded ${q._autoScore}</div>`
       }
 
       div.innerHTML = `<div class="qmeta">Q${idx+1} (max ${maxScore})</div>
@@ -88,6 +94,19 @@
         ${mcStatus}
         ${scoreInput}`
       questionsEl.appendChild(div)
+    })
+
+    questionsEl.querySelectorAll('input[name=score]').forEach(input=>{
+      const updateScoreState = ()=>{
+        const q = exam.questions[Number(input.dataset.index)]
+        const maxScore = Number((q && q.maxScore) ?? 0) || 0
+        const value = Number(input.value)
+        const overMax = !Number.isNaN(value) && value > maxScore
+        input.classList.toggle('score-over-max', overMax)
+        input.setAttribute('aria-invalid', overMax ? 'true' : 'false')
+      }
+      input.addEventListener('input', updateScoreState)
+      updateScoreState()
     })
   }
 
@@ -114,6 +133,25 @@
       const data = await resp.json()
       renderExam(data)
     }catch(e){ console.error(e); resultEl.textContent = 'Failed to load exam.' }
+  }
+
+  async function fetchCurrentUser(){
+    try{
+      const resp = await fetch(`${AUTH_SERVER}/api/me`, { credentials: 'include' })
+      if(!resp.ok) return
+      const data = await resp.json()
+      if(data && data.id){
+        currentUser = data
+        if(reviewerEl){
+          const tag = data.discriminator ? `#${data.discriminator}` : ''
+          reviewerEl.textContent = `${data.username || 'Reviewer'}${tag}`
+        }
+      } else if(reviewerEl){
+        reviewerEl.textContent = ''
+      }
+    }catch(_){
+      if(reviewerEl) reviewerEl.textContent = ''
+    }
   }
 
   previewBtn.addEventListener('click', ()=>{
@@ -155,10 +193,11 @@
       let data
       try{ data = JSON.parse(text) }catch(_){ data = { error: text } }
       if(!resp.ok){ resultEl.textContent = `Error: ${data.message || data.error || resp.status}`; setFormControlsEnabled(true); return }
-      resultEl.textContent = `Submitted. Result: ${JSON.stringify(data)}`
+      resultEl.textContent = 'Submitted successfully.'
       setFormControlsEnabled(false)
     }catch(e){ console.error(e); resultEl.textContent='Submission failed'; setFormControlsEnabled(true) }
   })
 
+  fetchCurrentUser()
   if(sessionId) fetchExam()
 })();

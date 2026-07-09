@@ -30,6 +30,17 @@
     container.appendChild(ul)
   }
 
+  function mergeUniqueLists(lists){
+    const seen = new Set()
+    const merged = []
+    lists.flat().forEach(item=>{
+      if(!item || !item.id || seen.has(item.id)) return
+      seen.add(item.id)
+      merged.push(item)
+    })
+    return merged
+  }
+
   async function load(){
     statusMsg.textContent = 'Checking login...'
     const user = await ensureAuth()
@@ -37,11 +48,22 @@
     statusMsg.textContent = `Signed in as ${user.username}#${user.discriminator}`
 
     try{
-      const p1 = fetch(`${AUTH_SERVER}/api/exams?phase=1&status=pending`,{credentials:'include'}).then(r=>r.json())
-      const p4 = fetch(`${AUTH_SERVER}/api/exams?phase=4&status=pending`,{credentials:'include'}).then(r=>r.json())
-      const [list1, list4] = await Promise.all([p1,p4])
-      renderList(phase1List, list1 || [])
-      renderList(phase4List, list4 || [])
+      const fetchList = async (phase, status) => {
+        const resp = await fetch(`${AUTH_SERVER}/api/exams?phase=${encodeURIComponent(phase)}&status=${encodeURIComponent(status)}`, { credentials: 'include' })
+        if(!resp.ok) return []
+        const data = await resp.json()
+        return Array.isArray(data) ? data : []
+      }
+
+      const [phase1Pending, phase1Awaiting, phase4Pending, phase4Awaiting] = await Promise.all([
+        fetchList(1, 'pending'),
+        fetchList(1, 'awaiting_review'),
+        fetchList(4, 'pending'),
+        fetchList(4, 'awaiting_review')
+      ])
+
+      renderList(phase1List, mergeUniqueLists([phase1Pending, phase1Awaiting]))
+      renderList(phase4List, mergeUniqueLists([phase4Pending, phase4Awaiting]))
     }catch(e){ console.error(e); statusMsg.textContent='Failed to load exams' }
   }
 
