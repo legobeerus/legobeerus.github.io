@@ -328,6 +328,7 @@ function startApp(){
     if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
     const roleLookup = await fetchGuildRolePayload(req.session.user.id).catch(e=>({ ok: false, status: 502, payload: null, error: e && e.message }));
     const guildRoles = roleEntriesFromPayload(roleLookup && roleLookup.payload);
+    const displayRoles = toDisplayRoles(guildRoles);
     if(!roleLookup.ok){
       console.warn('Profile role lookup failed', {
         userId: req.session.user.id,
@@ -339,10 +340,11 @@ function startApp(){
     console.log('Profile role extraction', {
       userId: req.session.user.id,
       roleCount: guildRoles.length,
+      displayRoleCount: displayRoles.length,
       lookupOk: roleLookup.ok,
       lookupStatus: roleLookup.status
     });
-    if(!pgPool) return res.json({ user: req.session.user, stats: null, recentSubmissions: [], roles: guildRoles.filter(role => role && role.name) });
+    if(!pgPool) return res.json({ user: req.session.user, stats: null, recentSubmissions: [], roles: displayRoles });
     try{
       const user = req.session.user;
       const statsRes = await pgPool.query(`
@@ -377,7 +379,7 @@ function startApp(){
           phase1Submissions: Number(stats.phase1_submissions || 0),
           phase4Submissions: Number(stats.phase4_submissions || 0)
         },
-        roles: guildRoles.filter(role => role && role.name),
+        roles: displayRoles,
         recentSubmissions: recentRes.rows || []
       });
     }catch(e){
@@ -587,6 +589,20 @@ function startApp(){
     }
 
     return results;
+  }
+
+  function isSnowflakeId(value){
+    return /^\d{16,22}$/.test(String(value == null ? '' : value).trim());
+  }
+
+  function toDisplayRoles(roles){
+    const list = Array.isArray(roles) ? roles : [];
+    return list.filter(role => {
+      if(!role || !role.name) return false;
+      const name = String(role.name).trim();
+      if(!name) return false;
+      return !isSnowflakeId(name);
+    });
   }
 
   async function fetchGuildRolePayload(userId){

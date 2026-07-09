@@ -63,8 +63,9 @@
     items.forEach(item=>{
       const chip = document.createElement('span')
       chip.className = 'profile-chip'
-      const roleName = typeof item === 'string' ? item : (item && item.name) || (item && item.id) || ''
+      const roleName = typeof item === 'string' ? item : (item && item.name) || ''
       if(!roleName) return
+      if(/^\d{16,22}$/.test(String(roleName).trim())) return
       chip.textContent = roleName
 
       const roleColor = normalizeColor(item && typeof item === 'object' ? item.color : null)
