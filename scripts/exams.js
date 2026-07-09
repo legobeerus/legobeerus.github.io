@@ -41,6 +41,20 @@
     return merged
   }
 
+  function normalizeStatus(value){
+    return String(value || '').toLowerCase().trim()
+  }
+
+  function isPhaseExam(item, phaseNumber){
+    const haystack = `${item && item.examId ? item.examId : ''} ${item && item.id ? item.id : ''}`.toLowerCase()
+    return haystack.includes(`phase${phaseNumber}`)
+  }
+
+  function isPendingLike(item){
+    const status = normalizeStatus(item && item.status)
+    return status.includes('pending') || status.includes('awaiting') || status.includes('review') || status.includes('queued')
+  }
+
   async function load(){
     statusMsg.textContent = 'Checking login...'
     const user = await ensureAuth()
@@ -48,22 +62,22 @@
     statusMsg.textContent = `Signed in as ${user.username}#${user.discriminator}`
 
     try{
-      const fetchList = async (phase, status) => {
-        const resp = await fetch(`${AUTH_SERVER}/api/exams?phase=${encodeURIComponent(phase)}&status=${encodeURIComponent(status)}`, { credentials: 'include' })
-        if(!resp.ok) return []
-        const data = await resp.json()
-        return Array.isArray(data) ? data : []
+      const resp = await fetch(`${AUTH_SERVER}/api/exams`, { credentials: 'include' })
+      if(!resp.ok){
+        statusMsg.textContent = `Failed to load exams (${resp.status})`
+        renderList(phase1List, [])
+        renderList(phase4List, [])
+        return
       }
 
-      const [phase1Pending, phase1Awaiting, phase4Pending, phase4Awaiting] = await Promise.all([
-        fetchList(1, 'pending'),
-        fetchList(1, 'awaiting_review'),
-        fetchList(4, 'pending'),
-        fetchList(4, 'awaiting_review')
-      ])
+      const data = await resp.json()
+      const items = Array.isArray(data) ? data : []
+      const phase1Items = items.filter(item => isPhaseExam(item, 1) && isPendingLike(item))
+      const phase4Items = items.filter(item => isPhaseExam(item, 4) && isPendingLike(item))
 
-      renderList(phase1List, mergeUniqueLists([phase1Pending, phase1Awaiting]))
-      renderList(phase4List, mergeUniqueLists([phase4Pending, phase4Awaiting]))
+      renderList(phase1List, mergeUniqueLists([phase1Items]))
+      renderList(phase4List, mergeUniqueLists([phase4Items]))
+      statusMsg.textContent = `Loaded ${items.length} exams. Phase 1: ${phase1Items.length}, Phase 4: ${phase4Items.length}`
     }catch(e){ console.error(e); statusMsg.textContent='Failed to load exams' }
   }
 
