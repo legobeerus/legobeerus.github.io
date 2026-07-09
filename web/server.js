@@ -526,7 +526,15 @@ function startApp(){
       const existingIndex = roleIndex.get(key);
       if(existingIndex != null){
         const existing = results[existingIndex];
-        if(!existing.name && cleanName) existing.name = cleanName;
+        // Prefer a human-readable role name over a snowflake fallback.
+        if(cleanName){
+          const existingName = String(existing.name || '').trim();
+          const incomingIsReadable = !isSnowflakeId(cleanName);
+          const existingIsMissingOrId = !existingName || isSnowflakeId(existingName);
+          if(incomingIsReadable && existingIsMissingOrId){
+            existing.name = cleanName;
+          }
+        }
         if(!existing.color && cleanColor) existing.color = cleanColor;
         return;
       }
@@ -583,10 +591,9 @@ function startApp(){
     pushIfPresent(fallback, payload && payload.data && payload.data.roles);
     pushIfPresent(fallback, payload && payload.guildRoles);
 
+    // Collect member-specific role ids first, then enrich from named role containers.
     memberFirst.forEach(value=>collect(value, true));
-    if(results.length === 0){
-      fallback.forEach(value=>collect(value, true));
-    }
+    fallback.forEach(value=>collect(value, true));
 
     return results;
   }
