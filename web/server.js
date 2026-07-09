@@ -307,9 +307,9 @@ function startApp(){
     const sql = `SELECT id,
       exam_id,
       status,
-      COALESCE(candidate_mention, payload::jsonb->>'candidate_mention', payload::jsonb->>'candidateMention', payload::jsonb->>'candidate', payload::jsonb->>'candidate_name', payload::jsonb->>'userId') AS candidate_mention,
-        COALESCE(payload::jsonb->>'createdAt', to_char(created_at, 'YYYYMMDDHH24MISS')) AS created_at
-        FROM exams_sessions ${where} ORDER BY created_at DESC LIMIT 200`;
+      COALESCE(payload::jsonb->>'candidate_mention', payload::jsonb->>'candidateMention', payload::jsonb->>'candidate', payload::jsonb->>'candidate_name', payload::jsonb->>'userId') AS candidate_mention,
+      COALESCE(payload::jsonb->>'createdAt', to_char(created_at, 'YYYYMMDDHH24MISS')) AS created_at
+      FROM exams_sessions ${where} ORDER BY created_at DESC LIMIT 200`;
       try{
         const q = await pgPool.query(sql, params);
         return res.json(q.rows || []);
