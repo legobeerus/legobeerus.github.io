@@ -328,6 +328,20 @@ function startApp(){
     if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
     const roleLookup = await fetchGuildRolePayload(req.session.user.id).catch(e=>({ ok: false, status: 502, payload: null, error: e && e.message }));
     const guildRoles = roleEntriesFromPayload(roleLookup && roleLookup.payload);
+    if(!roleLookup.ok){
+      console.warn('Profile role lookup failed', {
+        userId: req.session.user.id,
+        status: roleLookup.status,
+        error: roleLookup.error,
+        url: roleLookup.url
+      });
+    }
+    console.log('Profile role extraction', {
+      userId: req.session.user.id,
+      roleCount: guildRoles.length,
+      lookupOk: roleLookup.ok,
+      lookupStatus: roleLookup.status
+    });
     if(!pgPool) return res.json({ user: req.session.user, stats: null, recentSubmissions: [], roles: guildRoles.map(role => role.name).filter(Boolean) });
     try{
       const user = req.session.user;
@@ -489,10 +503,10 @@ function startApp(){
       results.push({ id: cleanId || cleanName, name: cleanName || cleanId });
     };
 
-    const collect = value=>{
+    const collect = (value, fromRoleContainer=false)=>{
       if(!value) return;
       if(Array.isArray(value)){
-        value.forEach(entry=>collect(entry));
+        value.forEach(entry=>collect(entry, fromRoleContainer));
         return;
       }
       if(typeof value === 'string' || typeof value === 'number'){
@@ -504,23 +518,49 @@ function startApp(){
         const id = value.id ?? value.roleId ?? value.role_id ?? value.value ?? value.discordRoleId ?? null;
         const name = value.name ?? value.roleName ?? value.label ?? value.title ?? value.displayName ?? value.text ?? null;
         if(id || name) addRole(id, name);
+        if(fromRoleContainer){
+          for(const [k, v] of Object.entries(value)){
+            if(v == null) continue;
+            if(typeof v === 'string' || typeof v === 'number'){
+              const key = String(k).trim();
+              const val = String(v).trim();
+              if(key && val) addRole(key, val);
+            }
+          }
+        }
       }
     };
 
-    collect(payload && payload.roles);
-    collect(payload && payload.roleIds);
-    collect(payload && payload.memberRoles);
-    collect(payload && payload.guildRoles);
-    collect(payload && payload && payload.member && payload.member.roles);
-    collect(payload && payload && payload.data && payload.data.roles);
+    collect(payload && payload.roles, true);
+    collect(payload && payload.roleIds, true);
+    collect(payload && payload.memberRoles, true);
+    collect(payload && payload.guildRoles, true);
+    collect(payload && payload.userRoles, true);
+    collect(payload && payload.memberRoleIds, true);
+    collect(payload && payload && payload.member && payload.member.roles, true);
+    collect(payload && payload && payload.member && payload.member.roleIds, true);
+    collect(payload && payload && payload.data && payload.data.roles, true);
+    collect(payload && payload && payload.data && payload.data.member && payload.data.member.roles, true);
 
     return results;
   }
 
   async function fetchGuildRolePayload(userId){
-    if(!userId) return { ok: false, status: 401, payload: null, error: 'unauthenticated' };
-    if(!BOT_BASE_URL) return { ok: false, status: 503, payload: null, error: 'BOT_BASE_URL not configured' };
-    if(!BOT_API_TOKEN) return { ok: false, status: 503, payload: null, error: 'BOT_API_TOKEN not configured' };
+    if(!userId){
+      console.warn('Role lookup skipped: missing userId');
+      return { ok: false, status: 401, payload: null, error: 'unauthenticated' };
+    }
+    if(!BOT_BASE_URL){
+      console.warn('Role lookup skipped: BOT_BASE_URL not configured');
+      return { ok: false, status: 503, payload: null, error: 'BOT_BASE_URL not configured' };
+    }
+    if(!BOT_API_TOKEN){
+      console.warn('Role lookup skipped: BOT_API_TOKEN not configured');
+      return { ok: false, status: 503, payload: null, error: 'BOT_API_TOKEN not configured' };
+    }
+    if(!BOT_GUILD_ID){
+      console.warn('Role lookup note: BOT_GUILD_ID/GUILD_ID not configured, using /api/guild-members fallback route');
+    }
 
     const base = BOT_BASE_URL.replace(/\/$/, '');
     const url = BOT_GUILD_ID
