@@ -245,6 +245,7 @@ a:hover,a:focus,a:active{color:var(--accent);text-decoration:none}
   gap:16px;
   margin-top:14px;
 }
+.dashboard-grid:has(.dashboard-card){align-items:stretch}
 .dashboard-card{
   position:relative;
   display:block;
@@ -296,8 +297,11 @@ a:hover,a:focus,a:active{color:var(--accent);text-decoration:none}
   color:#8af0ad;
   border:1px solid rgba(54,199,108,0.22);
 }
+.dashboard-card__badge[data-phase="phase1"]{background:rgba(0,175,241,0.14);color:#8fdfff;border-color:rgba(0,175,241,0.24)}
+.dashboard-card__badge[data-phase="phase4"]{background:rgba(245,215,122,0.14);color:#ffe8a2;border-color:rgba(245,215,122,0.24)}
 .dashboard-card__link{font-size:.88rem;color:var(--primary);font-weight:700}
 .dashboard-card h3{margin:0 0 8px;font-size:1.15rem}
+.dashboard-card h3{letter-spacing:-0.01em}
 .dashboard-card p{margin:0;color:var(--fg);opacity:.92;line-height:1.45}
 .dashboard-card__meta{margin-top:12px;color:var(--muted);font-size:.92rem}
 .dashboard-empty{
