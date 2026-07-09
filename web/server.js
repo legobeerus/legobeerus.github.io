@@ -194,7 +194,7 @@ function startApp(){
   }
 
   app.use(async (req, res, next)=>{
-    const protectedPages = new Set(['/exams.html', '/grade.html', '/profile.html']);
+    const protectedPages = new Set(['/exams.html', '/grade.html']);
     if(!protectedPages.has(req.path)) return next();
     if(!req.session || !req.session.user) return res.redirect('/');
     try{
@@ -317,16 +317,7 @@ function startApp(){
   app.get('/api/me', (req, res)=>{
     if(req.session && req.session.user){
       console.log('/api/me - returning user', req.session.user.id);
-      verifyGuildRoleAccess(req.session.user.id).then(access=>{
-        if(!access.allowed){
-          console.warn('/api/me - access denied for user', req.session.user.id, access.status, access.error || 'forbidden');
-          return res.status(access.status >= 500 ? access.status : 403).json({ error: access.status >= 500 ? 'role_check_unavailable' : 'forbidden' });
-        }
-        return res.json(req.session.user);
-      }).catch(e=>{
-        console.error('/api/me - access check failed', e && e.message);
-        return res.status(503).json({ error: 'role_check_unavailable' });
-      });
+      return res.json(req.session.user);
     } else {
       console.log('/api/me - no session');
       res.status(204).json(null);
@@ -335,8 +326,6 @@ function startApp(){
 
   app.get('/api/profile', async (req, res)=>{
     if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
-    const access = await verifyGuildRoleAccess(req.session.user.id);
-    if(!access.allowed) return res.status(access.status >= 500 ? access.status : 403).json({ error: access.status >= 500 ? 'role_check_unavailable' : 'forbidden' });
     if(!pgPool) return res.json({ user: req.session.user, stats: null, recentSubmissions: [], roles: [] });
     try{
       const user = req.session.user;

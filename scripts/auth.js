@@ -6,7 +6,6 @@
     try{
       const r = await fetch(`${AUTH_SERVER}/api/me`,{credentials:'include'})
       if(r.status === 204) return null
-      if(r.status === 403) return { accessDenied: true }
       if(!r.ok) return null
       return await r.json()
     }catch(e){return null}
@@ -101,21 +100,12 @@
     return a
   }
 
-  function createAccessDeniedBadge(){
-    const span = document.createElement('span')
-    span.className = 'auth-denied'
-    span.textContent = 'Role required'
-    return span
-  }
-
   async function init(){
     const cta = ensureNavCta()
     if(!cta) return
     cta.innerHTML = ''
     const user = await getUser()
-    if(user && user.accessDenied){
-      cta.appendChild(createAccessDeniedBadge())
-    }else if(user && user.id){
+    if(user && user.id){
       const avatar = createAvatarButton(user)
       cta.appendChild(avatar)
     }else{
