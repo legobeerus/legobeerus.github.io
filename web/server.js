@@ -34,30 +34,47 @@ let sessionStore = null;
 let hasExamSessionsTable = false;
 if(!envDatabaseUrl){
   console.warn('DATABASE_URL not set in environment; Postgres support is disabled.');
-}
-if(DATABASE_URL){
+} else {
   try{
     const safeDb = DATABASE_URL.replace(/(postgresql:\/\/[^:]+:)[^@]+@/, '$1*****@');
-    console.log('Connecting to database:', safeDb);
-    const PgStore = require('connect-pg-simple')(session);
+    console.log('Attempting DB connect to:', safeDb);
     const { Pool } = require('pg');
-    pgPool = new Pool({ connectionString: DATABASE_URL });
-    sessionStore = new PgStore({ pool: pgPool, tableName: 'session', createTableIfMissing: true });
-    console.log('Using Postgres session store (DATABASE_URL)');
-    // ensure a simple users table exists for optional user persistence
-    pgPool.query(`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT, discriminator TEXT, avatar TEXT, updated_at TIMESTAMP DEFAULT NOW())`).catch(e=>{ console.warn('users table check failed', e && e.message) });
-    pgPool.query(`CREATE TABLE IF NOT EXISTS exam_reviews (session_id TEXT PRIMARY KEY, reviewer_id TEXT, review JSONB, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())`).catch(e=>{ console.warn('exam_reviews table check failed', e && e.message) });
-    pgPool.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='exams_sessions') AS exists`).then(r=>{
-      hasExamSessionsTable = r.rows[0] && r.rows[0].exists;
-      console.log('exams_sessions table exists:', hasExamSessionsTable);
-      if(!hasExamSessionsTable){
-        pgPool.query(`SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname='public'`).then(list=>{
-          console.log('Public tables:', list.rows.map(row=>row.tablename));
-        }).catch(()=>{});
+    // create a temporary pool to test auth without exposing the app to a half-initialized pool
+    const testPool = new Pool({ connectionString: DATABASE_URL, max: 2, idleTimeoutMillis: 1000 });
+    testPool.connect().then(client=>{
+      client.release();
+      // connection succeeded, promote to main pool
+      pgPool = testPool;
+      try{
+        const PgStore = require('connect-pg-simple')(session);
+        sessionStore = new PgStore({ pool: pgPool, tableName: 'session', createTableIfMissing: true });
+        console.log('Using Postgres session store (DATABASE_URL)');
+      }catch(e){
+        console.warn('Failed to initialize session store, continuing without DB sessions:', e && e.message);
+        sessionStore = null;
       }
-    }).catch(e=>{ console.warn('Failed to check exams_sessions table existence:', e && e.message) });
+
+      // create helper tables if possible
+      pgPool.query(`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT, discriminator TEXT, avatar TEXT, updated_at TIMESTAMP DEFAULT NOW())`).catch(e=>{ console.warn('users table check failed', e && e.message) });
+      pgPool.query(`CREATE TABLE IF NOT EXISTS exam_reviews (session_id TEXT PRIMARY KEY, reviewer_id TEXT, review JSONB, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())`).catch(e=>{ console.warn('exam_reviews table check failed', e && e.message) });
+
+      pgPool.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='exams_sessions') AS exists`).then(r=>{
+        hasExamSessionsTable = r.rows[0] && r.rows[0].exists;
+        console.log('exams_sessions table exists:', hasExamSessionsTable);
+        if(!hasExamSessionsTable){
+          pgPool.query(`SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname='public'`).then(list=>{
+            console.log('Public tables:', list.rows.map(row=>row.tablename));
+          }).catch(()=>{});
+        }
+      }).catch(e=>{ console.warn('Failed to check exams_sessions table existence:', e && e.message) });
+    }).catch(err=>{
+      console.error('Database connection failed (auth or network). Postgres features disabled. Error:', err && err.message);
+      testPool.end().catch(()=>{});
+      pgPool = null;
+      sessionStore = null;
+    });
   }catch(e){
-    console.warn('Postgres session store not available:', e && e.message);
+    console.warn('Postgres initialization error; Postgres features disabled:', e && e.message);
     pgPool = null; sessionStore = null;
   }
 }
