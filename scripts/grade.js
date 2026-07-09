@@ -13,6 +13,7 @@
   const resultEl = byId('result')
   const submitBtn = form.querySelector('[type=submit]')
   let currentUser = null
+  const PASS_PERCENT = 75
 
   sessionLabel.textContent = sessionId ? `Session: ${sessionId}` : 'No session specified.'
 
@@ -109,6 +110,52 @@
       input.addEventListener('input', updateScoreState)
       updateScoreState()
     })
+
+    hidePreview()
+  }
+
+  function getPreviewState(){
+    const scores = collectScores()
+    if(!scores) return null
+    const feedback = byId('feedback').value || ''
+    const total = scores.reduce((a,b)=>a + (b == null ? 0 : b),0)
+    const maxScore = Number(exam && exam.maxScore) || 0
+    const percent = maxScore ? Math.round((total / maxScore) * 100) : 0
+    const passed = percent >= PASS_PERCENT
+    const label = exam && (exam.examId || exam.id || sessionId) ? String(exam.examId || exam.id || sessionId) : sessionId
+    return { scores, feedback, total, maxScore, percent, passed, label }
+  }
+
+  function hidePreview(){
+    previewArea.style.display = 'none'
+    previewBtn.textContent = 'Preview DM'
+    previewBtn.setAttribute('aria-expanded', 'false')
+  }
+
+  function showPreview(){
+    const state = getPreviewState()
+    if(!state) return
+    const passedClass = state.passed ? 'dm-preview-card__passed' : 'dm-preview-card__failed'
+    previewText.innerHTML = `
+      <div class="dm-preview-card__title">Exam Results — ${escapeHtml(state.label)}</div>
+      <div class="dm-preview-card__grid">
+        <div>
+          <div class="dm-preview-card__label">Score</div>
+          <div class="dm-preview-card__value">${state.total}/${state.maxScore} (${state.percent}%)</div>
+        </div>
+        <div>
+          <div class="dm-preview-card__label">Passed</div>
+          <div class="dm-preview-card__value ${passedClass}">${state.passed ? 'Yes' : 'No'}</div>
+        </div>
+      </div>
+      <div class="dm-preview-card__feedback">
+        <div class="dm-preview-card__label">Feedback</div>
+        <div class="dm-preview-card__value">${state.feedback ? escapeHtml(state.feedback) : 'No feedback provided.'}</div>
+      </div>
+    `
+    previewArea.style.display = 'block'
+    previewBtn.textContent = 'Hide DM Preview'
+    previewBtn.setAttribute('aria-expanded', 'true')
   }
 
   function escapeHtml(s){ return (s||'').replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"})[c]) }
@@ -155,19 +202,17 @@
   }
 
   previewBtn.addEventListener('click', ()=>{
-    const scores = collectScores()
-    if(!scores) return
-    const feedback = byId('feedback').value || ''
-    const total = scores.reduce((a,b)=>a + (b == null ? 0 : b),0)
-    const percent = exam && exam.maxScore ? Math.round(total / exam.maxScore * 100) : '—'
-    previewText.textContent = `Scores: ${scores.map(s=>s==null?'null':s).join(', ')}\nTotal: ${total}\nPercent: ${percent}\n\nFeedback:\n${feedback}`
-    previewArea.style.display='block'
+    if(previewArea.style.display === 'block'){
+      hidePreview()
+      return
+    }
+    showPreview()
   })
 
   function collectScores(){
     if(!exam) return null
     return exam.questions.map((q, idx) => {
-      const isMC = q.type === 'multiplechoice'
+      const isMC = String(q.type || '').toLowerCase().trim() === 'multiplechoice'
       if(isMC) return Number(q._autoScore || 0)
       const input = questionsEl.querySelector(`input[name=score][data-index="${idx}"]`)
       if(!input){ resultEl.textContent='Missing score input'; throw new Error('invalid') }
@@ -196,6 +241,7 @@
       try{ data = JSON.parse(text) }catch(_){ data = { error: text } }
       if(!resp.ok){ resultEl.textContent = `Error: ${data.message || data.error || resp.status}`; setFormControlsEnabled(true); form.classList.remove('is-submitting'); if(submitBtn) submitBtn.textContent = 'Submit Grades'; return }
       resultEl.textContent = 'Submitted successfully.'
+      hidePreview()
       setFormControlsEnabled(false)
     }catch(e){ console.error(e); resultEl.textContent='Submission failed'; setFormControlsEnabled(true) }
     finally{
