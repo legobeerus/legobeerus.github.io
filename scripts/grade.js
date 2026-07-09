@@ -128,6 +128,7 @@
 
   function hidePreview(){
     previewArea.style.display = 'none'
+    previewText.classList.remove('dm-preview-card--passed', 'dm-preview-card--failed')
     previewBtn.textContent = 'Preview DM'
     previewBtn.setAttribute('aria-expanded', 'false')
   }
@@ -136,6 +137,8 @@
     const state = getPreviewState()
     if(!state) return
     const passedClass = state.passed ? 'dm-preview-card__passed' : 'dm-preview-card__failed'
+    previewText.classList.remove('dm-preview-card--passed', 'dm-preview-card--failed')
+    previewText.classList.add(state.passed ? 'dm-preview-card--passed' : 'dm-preview-card--failed')
     previewText.innerHTML = `
       <div class="dm-preview-card__title">Exam Results — ${escapeHtml(state.label)}</div>
       <div class="dm-preview-card__grid">
