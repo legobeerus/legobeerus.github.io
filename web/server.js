@@ -18,6 +18,7 @@ const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 const BOT_BASE_URL = process.env.BOT_BASE_URL || '';
 const BOT_API_TOKEN = process.env.BOT_API_TOKEN || process.env.DISCORD_BOT_TOKEN || '';
 const BOT_GUILD_ID = process.env.BOT_GUILD_ID || process.env.GUILD_ID || process.env.BOT_API_DEFAULT_GUILD_ID || '';
+const LOCAL_ALLOWED_ROLE_IDS = new Set(String(process.env.ALLOWED_ROLE_IDS || '').split(',').map(value => value.trim()).filter(Boolean));
 
 if(!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET){
   console.warn('Warning: DISCORD_CLIENT_ID or DISCORD_CLIENT_SECRET not set. OAuth will not work until configured.');
@@ -475,29 +476,43 @@ function startApp(){
   }
 
   function roleEntriesFromPayload(payload){
-    const buckets = [];
-    if(Array.isArray(payload && payload.roles)) buckets.push(...payload.roles);
-    if(Array.isArray(payload && payload.roleIds)) buckets.push(...payload.roleIds);
-    if(Array.isArray(payload && payload.memberRoles)) buckets.push(...payload.memberRoles);
-    if(Array.isArray(payload && payload.guildRoles)) buckets.push(...payload.guildRoles);
-    if(Array.isArray(payload && payload.member && payload.member.roles)) buckets.push(...payload.member.roles);
-    if(Array.isArray(payload && payload.data && payload.data.roles)) buckets.push(...payload.data.roles);
+    const results = [];
+    const seen = new Set();
 
-    return buckets.flatMap(entry=>{
-      if(entry == null) return [];
-      if(typeof entry === 'string' || typeof entry === 'number'){
-        const text = String(entry);
-        return [{ id: text, name: text }];
+    const addRole = (id, name)=>{
+      const cleanId = id != null ? String(id).trim() : '';
+      const cleanName = name != null ? String(name).trim() : '';
+      const key = `${cleanId}::${cleanName}`;
+      if(!cleanId && !cleanName) return;
+      if(seen.has(key)) return;
+      seen.add(key);
+      results.push({ id: cleanId || cleanName, name: cleanName || cleanId });
+    };
+
+    const walk = (value, path='')=>{
+      if(value == null) return;
+      if(Array.isArray(value)){
+        value.forEach((item, idx)=>walk(item, `${path}[${idx}]`));
+        return;
       }
-      if(typeof entry === 'object'){
-        const id = entry.id ?? entry.roleId ?? entry.role_id ?? entry.value ?? entry.discordRoleId ?? null;
-        const name = entry.name ?? entry.roleName ?? entry.label ?? entry.title ?? entry.displayName ?? entry.text ?? null;
-        if(id || name){
-          return [{ id: String(id || name), name: String(name || id) }];
+      if(typeof value === 'object'){
+        const id = value.id ?? value.roleId ?? value.role_id ?? value.value ?? value.discordRoleId ?? null;
+        const name = value.name ?? value.roleName ?? value.label ?? value.title ?? value.displayName ?? value.text ?? null;
+        if(id || name) addRole(id, name);
+        for(const [key, child] of Object.entries(value)){
+          walk(child, path ? `${path}.${key}` : key);
         }
+        return;
       }
-      return [];
-    });
+      const text = String(value).trim();
+      if(!text) return;
+      if(/(^|\.)roles?(\.|\[|$)/i.test(path) || /role/i.test(path)){
+        addRole(text, text);
+      }
+    };
+
+    walk(payload);
+    return results;
   }
 
   async function fetchGuildRolePayload(userId){
@@ -541,7 +556,9 @@ function startApp(){
       ? lookup.payload.allowed
       : typeof (lookup.payload && lookup.payload.isAllowed) === 'boolean'
         ? lookup.payload.isAllowed
-        : false;
+        : LOCAL_ALLOWED_ROLE_IDS.size
+          ? roles.some(role => LOCAL_ALLOWED_ROLE_IDS.has(role.id) || LOCAL_ALLOWED_ROLE_IDS.has(role.name))
+          : false;
 
     return { allowed, status: allowed ? 200 : 403, roles, details: lookup.payload, url: lookup.url };
   }
