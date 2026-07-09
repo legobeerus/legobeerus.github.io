@@ -24,7 +24,9 @@
     const candidate = data.candidateMention || data.candidate_name || data.userId || (data.user && data.user.username) || 'unknown'
     sessionLabel.textContent = `Session: ${data.examId || data.id || sessionId} — Candidate: ${candidate}`
 
-    const totalPossible = (data.questions || []).reduce((sum,q)=>sum + (Number(q.maxScore) || 1), 0)
+    const answersByIndex = new Map((data.answers || []).map(a => [a.index, a.answer]))
+    exam.answersByIndex = answersByIndex
+    const totalPossible = (data.questions || []).reduce((sum,q)=>sum + (Number(q.maxScore ?? 0) || 0), 0)
     exam.maxScore = totalPossible
     byId('totalPossible').textContent = `Total possible: ${totalPossible}`
 
@@ -35,9 +37,10 @@
 
     questionsEl.innerHTML = ''
     data.questions.forEach((q, idx)=>{
-      const maxScore = Number(q.maxScore) || 1
+      const maxScore = Number(q.maxScore ?? 0) || 0
       const isMC = q.type === 'multiplechoice'
       const isText = !q.type || q.type === 'text'
+      const answerValue = answersByIndex.get(idx) ?? ''
       const div = document.createElement('div')
       div.className = 'question'
 
@@ -50,27 +53,33 @@
 
       let choicesHtml = ''
       if(isMC && Array.isArray(q.choices)){
-        const selected = q.answer || q.selected
         const correctAnswer = q.correctAnswer || q.correct_answer
         choicesHtml = `<div class="choices"><strong>Choices:</strong><ul>`
         q.choices.forEach(choice=>{
-          let label = typeof choice === 'string' ? choice : choice.label || choice.text || choice.value || ''
-          let choiceValue = typeof choice === 'string' ? choice : choice.value || choice.label || choice.text || ''
-          const isSelected = selected != null && String(choiceValue) === String(selected)
-          const isCorrect = choice.correct === true || (correctAnswer != null && String(choiceValue) === String(correctAnswer))
+          const choiceValue = typeof choice === 'string' ? choice : choice.value ?? choice.label ?? choice.text ?? ''
+          const label = typeof choice === 'string' ? choice : choice.label || choice.text || choice.value || ''
+          const isSelected = answerValue != null && String(choiceValue) === String(answerValue)
+          const isCorrect = correctAnswer != null && String(choiceValue) === String(correctAnswer)
           const icon = isSelected ? (isCorrect ? '✅' : '❌') : '▫️'
           choicesHtml += `<li style="margin:4px 0">${icon} ${escapeHtml(label)}</li>`
         })
         choicesHtml += '</ul></div>'
       }
 
-      const correctness = isMC ? `<div class="mc-result">${q.correct === true || q.isCorrect === true || (q.answer != null && (q.answer === q.correctAnswer || q.answer === q.correct_answer)) ? 'Correct' : 'Incorrect'}</div>` : ''
+      const isCorrectAnswer = isMC && String(answerValue) === String(q.correctAnswer || q.correct_answer)
+      const mcStatus = isMC
+        ? `<div class="mc-result">${isCorrectAnswer ? 'Correct' : 'Incorrect'}</div>`
+        : ''
+
+      if(isMC){
+        q._autoScore = isCorrectAnswer ? maxScore : 0
+      }
 
       div.innerHTML = `<div class="qmeta">Q${idx+1} (max ${maxScore})</div>
-        <div class="prompt"><strong>Question:</strong> ${escapeHtml(q.prompt || q.question || '')}</div>
-        <div class="answer"><strong>Answer:</strong> ${escapeHtml(q.answer || q.response || '')}</div>
+        <div class="prompt"><strong>Question:</strong> ${escapeHtml(q.text || q.prompt || q.question || '')}</div>
+        <div class="answer"><strong>Answer:</strong> ${escapeHtml(answerValue)}</div>
         ${choicesHtml}
-        ${correctness}
+        ${mcStatus}
         ${scoreInput}`
       questionsEl.appendChild(div)
     })
@@ -102,12 +111,12 @@
     if(!exam) return null
     return exam.questions.map((q, idx) => {
       const isMC = q.type === 'multiplechoice'
-      if(isMC) return null
+      if(isMC) return Number(q._autoScore || 0)
       const input = questionsEl.querySelector(`input[name=score][data-index="${idx}"]`)
       if(!input){ resultEl.textContent='Missing score input'; throw new Error('invalid') }
       const v = Number(input.value)
       if(Number.isNaN(v) || v < 0){ input.focus(); resultEl.textContent='Invalid score value'; throw new Error('invalid') }
-      const maxScore = Number(q.maxScore) || 1
+      const maxScore = Number(q.maxScore ?? 0) || 0
       if(v > maxScore){ input.focus(); resultEl.textContent=`Score cannot exceed max ${maxScore}`; throw new Error('invalid') }
       return v
     })
