@@ -17,7 +17,7 @@
 
   function renderList(container, items){
     container.innerHTML = '';
-    if(!items || items.length===0){ container.textContent = 'No pending exams.'; return }
+    if(!items || items.length===0){ container.textContent = 'No active exams.'; return }
     const ul = document.createElement('ul')
     items.forEach(it=>{
       const li = document.createElement('li')
@@ -50,9 +50,9 @@
     return haystack.includes(`phase${phaseNumber}`)
   }
 
-  function isPendingLike(item){
+  function isActiveExam(item){
     const status = normalizeStatus(item && item.status)
-    return status.includes('pending') || status.includes('awaiting') || status.includes('review') || status.includes('queued')
+    return status === 'active'
   }
 
   async function load(){
@@ -72,8 +72,8 @@
 
       const data = await resp.json()
       const items = Array.isArray(data) ? data : []
-      const phase1Items = items.filter(item => isPhaseExam(item, 1) && isPendingLike(item))
-      const phase4Items = items.filter(item => isPhaseExam(item, 4) && isPendingLike(item))
+      const phase1Items = items.filter(item => isPhaseExam(item, 1) && isActiveExam(item))
+      const phase4Items = items.filter(item => isPhaseExam(item, 4) && isActiveExam(item))
 
       renderList(phase1List, mergeUniqueLists([phase1Items]))
       renderList(phase4List, mergeUniqueLists([phase4Items]))
