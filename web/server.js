@@ -487,7 +487,7 @@ function startApp(){
     const where = conditions.length ? ('WHERE ' + conditions.join(' AND ')) : '';
     const lockJoin = hasReviewLocksTable
       ? `LEFT JOIN exam_review_locks rl
-          ON rl.session_id = es.id
+          ON rl.session_id = es.id::text
          AND rl.updated_at > NOW() - ('${REVIEW_LOCK_WINDOW_SECONDS} seconds')::interval`
       : '';
     const lockSelect = hasReviewLocksTable
