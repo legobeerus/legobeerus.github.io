@@ -439,14 +439,15 @@ function startApp(){
       }
       // persist grades to DB when available, adapt to actual exam_reviews schema
       if(pgPool){
+        console.log('Persisting review - detected exam_reviews columns:', Array.from(examReviewsColumns));
         try{
           const reviewer = { id: req.session.user.id, username: req.session.user.username, discriminator: req.session.user.discriminator };
           // If table has a `review` JSONB column, write the full object there
           if(examReviewsColumns.has('review')){
             const reviewObj = { grades, feedback: reviewPayload.feedback, reviewer };
-            const upd = await pgPool.query(`UPDATE exam_reviews SET reviewer_id=$1, review=$2, updated_at=NOW() WHERE session_id=$3`, [req.session.user.id, JSON.stringify(reviewObj), req.params.id]);
+            const upd = await pgPool.query(`UPDATE exam_reviews SET reviewer_id=$1, review=$2 WHERE session_id=$3`, [req.session.user.id, JSON.stringify(reviewObj), req.params.id]);
             if(upd.rowCount === 0){
-              await pgPool.query(`INSERT INTO exam_reviews (session_id, reviewer_id, review, created_at, updated_at) VALUES ($1,$2,$3,NOW(),NOW())`, [req.params.id, req.session.user.id, JSON.stringify(reviewObj)]);
+              await pgPool.query(`INSERT INTO exam_reviews (session_id, reviewer_id, review) VALUES ($1,$2,$3)`, [req.params.id, req.session.user.id, JSON.stringify(reviewObj)]);
             }
           } else {
             // Otherwise try to write to `scores` and `feedback` columns if present
@@ -464,7 +465,7 @@ function startApp(){
             if(hasFeedback){ updParts.push(`feedback=$${paramIdx++}`); updVals.push(reviewPayload.feedback || '') }
             // add session_id as last param for WHERE
             updVals.push(req.params.id);
-            const updSql = `UPDATE exam_reviews SET ${updParts.join(', ')}, updated_at=NOW() WHERE session_id=$${paramIdx}`;
+            const updSql = `UPDATE exam_reviews SET ${updParts.join(', ')} WHERE session_id=$${paramIdx}`;
             const updRes = await pgPool.query(updSql, updVals);
             if(updRes.rowCount === 0){
               // Insert
