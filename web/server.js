@@ -166,12 +166,7 @@ function startApp(){
     siteRoot = path.join(__dirname, '..');
   }
   app.use(express.static(siteRoot));
-
-  // Log useful startup info
-  console.log('Serving static site from', siteRoot);
-  console.log('Configured BASE_URL:', BASE_URL);
-
-  // Log existence of important static files for debugging
+  // Log useful startup info and check important static files
   const fs = require('fs');
   const checkFiles = [
     'index.html',
@@ -180,6 +175,8 @@ function startApp(){
     'styles.css',
     'media/bg.jpg'
   ];
+  console.log('Serving static site from', siteRoot);
+  console.log('Configured BASE_URL:', BASE_URL);
   checkFiles.forEach(f=>{
     const p = path.join(siteRoot, f);
     console.log('STATIC CHECK:', f, fs.existsSync(p) ? 'FOUND' : 'MISSING', p);
@@ -507,34 +504,4 @@ function startApp(){
   app.listen(port, ()=>{ console.log(`Server listening on http://localhost:${port}`); });
 }
 
-// Log useful startup info
-console.log('Serving static site from', siteRoot);
-console.log('Configured BASE_URL:', BASE_URL);
-
-// Log existence of important static files for debugging
-const fs = require('fs');
-const checkFiles = [
-  'index.html',
-  'scripts/auth.js',
-  'scripts/server-config.js',
-  'styles.css',
-  'media/bg.jpg'
-];
-checkFiles.forEach(f=>{
-  const p = path.join(siteRoot, f);
-  console.log('STATIC CHECK:', f, fs.existsSync(p) ? 'FOUND' : 'MISSING', p);
-});
-
-
-
-// Fallback: serve index.html for any other unmatched GET (SPA-style)
-app.get('*', (req, res, next) => {
-  if (req.method !== 'GET') return next();
-  // do not handle API or auth routes here
-  const skipPrefixes = ['/api', '/auth', '/oauth', '/scripts', '/__filelist'];
-  for(const p of skipPrefixes) if(req.path.startsWith(p)) return next();
-  res.sendFile(path.join(siteRoot, 'index.html'));
-});
-
-const port = process.env.PORT || 3000;
-app.listen(port, ()=>{ console.log(`Server listening on http://localhost:${port}`); });
+// duplicate static logging and server start removed; startApp() already handles startup
