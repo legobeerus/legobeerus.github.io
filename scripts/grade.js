@@ -92,7 +92,20 @@
   }
 
   function escapeHtml(s){ return (s||'').replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"})[c]) }
-
+  function setFormControlsEnabled(enabled){
+    previewBtn.disabled = !enabled
+    const submitBtn = form.querySelector('[type=submit]')
+    if(submitBtn){
+      submitBtn.disabled = !enabled
+      if(enabled){
+        submitBtn.classList.remove('disabled')
+        previewBtn.classList.remove('disabled')
+      } else {
+        submitBtn.classList.add('disabled')
+        previewBtn.classList.add('disabled')
+      }
+    }
+  }
   async function fetchExam(){
     try{
       const resp = await fetch(`${AUTH_SERVER}/api/exams/${encodeURIComponent(sessionId)}`, { credentials: 'include' })
@@ -134,15 +147,17 @@
     try{ scores = collectScores() }catch(e){ return }
     const feedback = byId('feedback').value || ''
     try{
+      setFormControlsEnabled(false)
       const resp = await fetch(`${AUTH_SERVER}/api/exams/${encodeURIComponent(sessionId)}/grade`,{
         method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scores, feedback}), credentials: 'include'
       })
       const text = await resp.text()
       let data
       try{ data = JSON.parse(text) }catch(_){ data = { error: text } }
-      if(!resp.ok){ resultEl.textContent = `Error: ${data.message || data.error || resp.status}`; return }
+      if(!resp.ok){ resultEl.textContent = `Error: ${data.message || data.error || resp.status}`; setFormControlsEnabled(true); return }
       resultEl.textContent = `Submitted. Result: ${JSON.stringify(data)}`
-    }catch(e){ console.error(e); resultEl.textContent='Submission failed' }
+      setFormControlsEnabled(false)
+    }catch(e){ console.error(e); resultEl.textContent='Submission failed'; setFormControlsEnabled(true) }
   })
 
   if(sessionId) fetchExam()
