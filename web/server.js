@@ -39,6 +39,7 @@ if(DATABASE_URL){
     console.log('Using Postgres session store (DATABASE_URL)');
     // ensure a simple users table exists for optional user persistence
     pgPool.query(`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT, discriminator TEXT, avatar TEXT, updated_at TIMESTAMP DEFAULT NOW())`).catch(e=>{ console.warn('users table check failed', e && e.message) });
+    pgPool.query(`CREATE TABLE IF NOT EXISTS exam_reviews (session_id TEXT PRIMARY KEY, reviewer_id TEXT, review JSONB, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())`).catch(e=>{ console.warn('exam_reviews table check failed', e && e.message) });
   }catch(e){
     console.warn('Postgres session store not available:', e && e.message);
     pgPool = null; sessionStore = null;
@@ -227,21 +228,74 @@ app.get('/logout', (req, res)=>{
 app.get('/api/exams', async (req, res)=>{
   if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
   if(!pgPool) return res.status(500).json({ error: 'server not configured to read DB' });
-  const phase = req.query.phase ? Number(req.query.phase) : null;
+  const examId = req.query.examId || null;
   const status = req.query.status || null;
   const conditions = [];
   const params = [];
   let idx = 1;
-  if(phase!=null){ conditions.push(`phase = $${idx++}`); params.push(phase) }
-  if(status){ conditions.push(`status = $${idx++}`); params.push(status) }
+  if(examId){ conditions.push(`payload::jsonb->>'examId' = $${idx++}`); params.push(examId) }
+  if(status){ conditions.push(`payload::jsonb->>'status' = $${idx++}`); params.push(status) }
   const where = conditions.length ? ('WHERE ' + conditions.join(' AND ')) : '';
-  const sql = `SELECT id, phase, status, candidate_mention, created_at FROM exams ${where} ORDER BY created_at DESC LIMIT 200`;
-  try{
-    const q = await pgPool.query(sql, params);
-    return res.json(q.rows || []);
-  }catch(e){ console.error('DB list exams failed', e && e.message); return res.status(502).json({ error: 'db_error' }); }
+  const sql = `SELECT id,
+      payload::jsonb->>'examId' AS examId,
+      payload::jsonb->>'status' AS status,
+      COALESCE(payload::jsonb->>'candidate_mention', payload::jsonb->>'candidateMention', payload::jsonb->>'candidate', payload::jsonb->>'candidate_name', payload::jsonb->>'userId') AS candidate_mention,
+      payload::jsonb->>'createdAt' AS createdAt
+      FROM exams_sessions ${where} ORDER BY (payload::jsonb->>'createdAt')::bigint DESC LIMIT 200`;
+    try{
+      const q = await pgPool.query(sql, params);
+      return res.json(q.rows || []);
+    }catch(e){ console.error('DB list exams failed', e && e.message); return res.status(502).json({ error: 'db_error' }); }
 });
 
+
+function normalizeExamPayload(payload, examId){
+  const data = { id: examId, ...payload };
+  data.candidateMention = payload.candidate_mention || payload.candidateMention || payload.candidate || payload.candidate_name || payload.userId || 'unknown';
+  data.status = payload.status || payload.phase_status || 'pending';
+  data.examId = payload.examId || payload.exam_id || 'unknown';
+  const questions = [];
+  if(Array.isArray(payload.questions)){
+    payload.questions.forEach((prompt, idx)=>{
+      const answerObj = Array.isArray(payload.answers) ? payload.answers.find(a=>a.index === idx) : null;
+      questions.push({
+        prompt: typeof prompt === 'string' ? prompt : prompt.prompt || prompt.question || `Question ${idx+1}`,
+        answer: answerObj ? answerObj.answer : ''
+      });
+    });
+  }else if(Array.isArray(payload.answers) && Array.isArray(payload.questions)){
+    payload.questions.forEach((prompt, idx)=>{
+      const answerObj = payload.answers.find(a=>a.index === idx);
+      questions.push({
+        prompt: typeof prompt === 'string' ? prompt : prompt.prompt || prompt.question || `Question ${idx+1}`,
+        answer: answerObj ? answerObj.answer : ''
+      });
+    });
+  }else if(Array.isArray(payload.answers)){
+    payload.answers.forEach((item, idx)=>{
+      questions.push({
+        prompt: payload.questions && payload.questions[item.index] ? payload.questions[item.index] : `Question ${item.index != null ? item.index+1 : idx+1}`,
+        answer: item.answer || item.response || item.value || item.text || ''
+      });
+    });
+  }else if(Array.isArray(payload.responses)){
+    payload.responses.forEach((item, idx)=>{
+      questions.push({
+        prompt: item.prompt || item.question || `Question ${idx+1}`,
+        answer: item.answer || item.response || item.value || item.text || ''
+      });
+    });
+  }else if(payload.responses && typeof payload.responses === 'object'){
+    Object.values(payload.responses).forEach((item, idx)=>{
+      questions.push({
+        prompt: item.prompt || item.question || `Question ${idx+1}`,
+        answer: item.answer || item.response || item.value || item.text || ''
+      });
+    });
+  }
+  if(questions.length) data.questions = questions;
+  return data;
+}
 
 // Fetch single exam: prefer DB row, fallback to bot
 app.get('/api/exams/:id', async (req, res)=>{
@@ -249,8 +303,12 @@ app.get('/api/exams/:id', async (req, res)=>{
   const examId = req.params.id;
   if(pgPool){
     try{
-      const q = await pgPool.query('SELECT * FROM exams WHERE id = $1 LIMIT 1', [examId]);
-      if(q.rowCount>0){ return res.json(q.rows[0]) }
+      const q = await pgPool.query('SELECT id, payload, created_at FROM exams_sessions WHERE id = $1 LIMIT 1', [examId]);
+      if(q.rowCount>0){
+        const row = q.rows[0];
+        const payload = typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload;
+        return res.json(normalizeExamPayload(payload, row.id));
+      }
     }catch(e){ console.warn('DB fetch exam failed', e && e.message) }
   }
   // fallback to bot proxy
@@ -289,8 +347,15 @@ app.post('/api/exams/:id/grade', async (req, res)=>{
     // persist grades to DB when available
     if(bresp.ok && pgPool){
       try{
-        await pgPool.query('UPDATE exams SET grades = $1, status = $2, graded_by = $3, graded_at = NOW() WHERE id = $4', [JSON.stringify(payload), 'graded', req.session.user.id, req.params.id]);
-      }catch(e){ console.warn('Failed to persist grades to DB', e && e.message) }
+        await pgPool.query(`INSERT INTO exam_reviews (session_id, reviewer_id, review, created_at, updated_at)
+          VALUES ($1,$2,$3,NOW(),NOW())
+          ON CONFLICT (session_id) DO UPDATE SET reviewer_id = EXCLUDED.reviewer_id, review = EXCLUDED.review, updated_at = NOW()`,
+          [req.params.id, req.session.user.id, JSON.stringify({ grades: payload.grades, feedback: payload.feedback || '', reviewer: { id: req.session.user.id, username: req.session.user.username, discriminator: req.session.user.discriminator } })]
+        );
+      }catch(e){ console.warn('Failed to persist review to DB', e && e.message) }
+      try{
+        await pgPool.query(`UPDATE exams_sessions SET payload = payload::jsonb || $1 WHERE id = $2`, [JSON.stringify({ status: 'graded' }), req.params.id]);
+      }catch(e){ console.warn('Failed to mark exam graded', e && e.message) }
     }
     return res.status(bresp.status).json(data);
   }catch(err){ console.error('proxy POST error', err); return res.status(502).json({ error: 'bad_gateway' }); }
