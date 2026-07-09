@@ -1,6 +1,7 @@
 (function(){
   const statusMsg = document.getElementById('statusMsg')
-  const reviewGrid = document.getElementById('reviewGrid')
+  const phase1List = document.getElementById('phase1List')
+  const phase4List = document.getElementById('phase4List')
 
   function el(tag, txt){ const e = document.createElement(tag); if(txt!=null) e.textContent = txt; return e }
 
@@ -37,7 +38,7 @@
     if(!items || items.length===0){
       const empty = document.createElement('div')
       empty.className = 'dashboard-empty'
-      empty.textContent = 'No active reviews are waiting right now.'
+      empty.textContent = 'No active exams are waiting in this section.'
       container.appendChild(empty)
       return
     }
@@ -50,10 +51,10 @@
       const examId = it.exam_id || it.examId || it.id
       const candidate = it.candidate_mention || it.candidate || it.candidate_name || it.userId || 'Unknown candidate'
       const createdAt = formatDate(it.created_at)
-      const phaseLabel = /phase\s*4/i.test(String(examId)) ? 'Phase 4 review' : (/phase\s*1/i.test(String(examId)) ? 'Phase 1 review' : 'Active review')
+      const phaseLabel = /phase\s*4/i.test(String(examId)) ? 'Phase 4 review' : 'Phase 1 review'
       a.innerHTML = `
         <div class="dashboard-card__top">
-          <span class="dashboard-card__badge">${phaseLabel}</span>
+          <span class="dashboard-card__badge">Active</span>
           <span class="dashboard-card__link">Open review</span>
         </div>
         <h3>${phaseLabel}</h3>
@@ -99,7 +100,7 @@
     statusMsg.textContent = 'Checking login...'
     const user = await ensureAuth()
     if(!user) return
-    statusMsg.textContent = `Signed in as ${user.username}#${user.discriminator}. Loading active reviews...`
+    statusMsg.textContent = `Signed in as ${user.username}#${user.discriminator}`
 
     try{
       const resp = await fetch(`${AUTH_SERVER}/api/exams`, { credentials: 'include' })
@@ -112,10 +113,12 @@
 
       const data = await resp.json()
       const items = Array.isArray(data) ? data : []
-      const activeItems = items.filter(item => isActiveExam(item))
+      const phase1Items = items.filter(item => isPhaseExam(item, 1) && isActiveExam(item))
+      const phase4Items = items.filter(item => isPhaseExam(item, 4) && isActiveExam(item))
 
-      renderList(reviewGrid, mergeUniqueLists([activeItems]))
-      statusMsg.textContent = `Loaded ${items.length} exams. Showing ${activeItems.length} active review(s).`
+      renderList(phase1List, mergeUniqueLists([phase1Items]))
+      renderList(phase4List, mergeUniqueLists([phase4Items]))
+      statusMsg.textContent = `Loaded ${items.length} exams. Showing ${phase1Items.length} active review(s) in Phase 1 and ${phase4Items.length} in Phase 4.`
     }catch(e){ console.error(e); statusMsg.textContent='Failed to load exams' }
   }
 
