@@ -103,36 +103,55 @@ if(pgPool){
     }
   }, DB_PING_INTERVAL_MS);
 }
-
-if(!sessionStore){
-  console.error('Fatal: session store is not configured (no Postgres session store).');
-  console.error('Remove in-memory fallback by setting the DATABASE_URL env var correctly. Exiting.');
-  process.exit(1);
+// Defer session middleware and the fatal session-store check until DB init completes.
+// This prevents exiting prematurely while the async DB connect is still pending.
+let dbInitPromise = Promise.resolve();
+if(envDatabaseUrl){
+  // If DATABASE_URL is set we have an async init path above; ensure we wait for it.
+  dbInitPromise = new Promise((resolve)=>{
+    // The async branch above will resolve by calling connect().then or catch; we resolve here
+    // by polling for pgPool/sessionStore readiness at short intervals up to a timeout.
+    const start = Date.now();
+    const timeout = 10000; // 10s max wait
+    const check = ()=>{
+      if(sessionStore || (pgPool === null && Date.now()-start > timeout)) return resolve();
+      setTimeout(check, 200);
+    };
+    check();
+  });
 }
 
-app.use(session({
-  store: sessionStore,
-  secret: SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-  cookie: { secure: isSecure, sameSite: isSecure ? 'none' : 'lax' }
-}));
-
-// Enable CORS for the static site origin so the frontend can call /api endpoints
-const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://legobeerus.github.io';
-app.use(cors({ origin: ALLOWED_ORIGIN, credentials: true }));
-
-// If BASE_URL is HTTPS (production behind a proxy like Railway), enable trust proxy
-try{
-  if(isSecure){
-    app.set('trust proxy', 1);
-    // ensure session cookie appears as secure
-    app.use((req, res, next)=>{
-      if(req.session) req.session.cookie.secure = true;
-      next();
-    });
+dbInitPromise.then(()=>{
+  if(envDatabaseUrl && !sessionStore){
+    console.error('Fatal: session store is not configured (no Postgres session store).');
+    console.error('DATABASE_URL provided but session store failed to initialize. Exiting.');
+    process.exit(1);
   }
-}catch(e){ /* ignore */ }
+
+  app.use(session({
+    store: sessionStore,
+    secret: SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: isSecure, sameSite: isSecure ? 'none' : 'lax' }
+  }));
+
+  // Enable CORS for the static site origin so the frontend can call /api endpoints
+  const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://legobeerus.github.io';
+  app.use(cors({ origin: ALLOWED_ORIGIN, credentials: true }));
+
+  // If BASE_URL is HTTPS (production behind a proxy like Railway), enable trust proxy
+  try{
+    if(isSecure){
+      app.set('trust proxy', 1);
+      // ensure session cookie appears as secure
+      app.use((req, res, next)=>{
+        if(req.session) req.session.cookie.secure = true;
+        next();
+      });
+    }
+  }catch(e){ /* ignore */ }
+});
 
 // Serve static site. Try expected layout, fall back to parent folder when running in Docker.
 let siteRoot = path.join(__dirname, '..', 'legobeerus.github.io');
