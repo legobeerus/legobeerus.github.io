@@ -24,6 +24,7 @@
   let isArchiveMode = archiveModeRequested
   const draftKey = sessionId ? `grade:draft:${sessionId}` : ''
   let draftSaveTimer = null
+  let tocScrollCleanup = null
 
   function loadDraft(){
     if(!draftKey || isArchiveMode) return null
@@ -122,6 +123,10 @@
   }
 
   function removeSectionsToc(){
+    if(tocScrollCleanup){
+      tocScrollCleanup()
+      tocScrollCleanup = null
+    }
     const toc = byId('sectionsToc')
     if(toc) toc.remove()
     if(gradingPageEl) gradingPageEl.classList.remove('grading-page--with-toc')
@@ -143,15 +148,33 @@
     const list = document.createElement('div')
     list.className = 'grade-sections-toc__list'
 
+    function setActiveSection(activeId){
+      list.querySelectorAll('.grade-sections-toc__item').forEach(item=>{
+        item.classList.toggle('is-active', item.dataset.sectionId === activeId)
+      })
+    }
+
+    function syncActiveSection(){
+      const markerY = window.scrollY + getNavOffset() + 40
+      let active = sections[0]
+      sections.forEach(section=>{
+        const target = document.getElementById(section.id)
+        if(!target) return
+        const top = window.scrollY + target.getBoundingClientRect().top
+        if(top <= markerY) active = section
+      })
+      if(active) setActiveSection(active.id)
+    }
+
     sections.forEach((section, index)=>{
       const btn = document.createElement('button')
       btn.type = 'button'
       btn.className = 'grade-sections-toc__item'
+      btn.dataset.sectionId = section.id
       if(index === 0) btn.classList.add('is-active')
       btn.textContent = section.title
       btn.addEventListener('click', ()=>{
-        list.querySelectorAll('.grade-sections-toc__item').forEach(item=>item.classList.remove('is-active'))
-        btn.classList.add('is-active')
+        setActiveSection(section.id)
         const target = document.getElementById(section.id)
         if(!target) return
         const targetY = window.scrollY + target.getBoundingClientRect().top - getNavOffset()
@@ -163,6 +186,24 @@
     toc.appendChild(list)
     gradingPageEl.appendChild(toc)
     gradingPageEl.classList.add('grading-page--with-toc')
+
+    let ticking = false
+    const onScroll = ()=>{
+      if(ticking) return
+      ticking = true
+      requestAnimationFrame(()=>{
+        ticking = false
+        syncActiveSection()
+      })
+    }
+
+    window.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onScroll)
+    tocScrollCleanup = ()=>{
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onScroll)
+    }
+    syncActiveSection()
   }
 
   sessionLabel.textContent = sessionId ? `Session: ${sessionId}` : 'No session specified.'
