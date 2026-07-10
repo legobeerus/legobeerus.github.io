@@ -206,7 +206,7 @@ function startApp(){
   }
 
   app.use(async (req, res, next)=>{
-    const protectedPages = new Set(['/exams.html', '/grade.html']);
+    const protectedPages = new Set(['/exams.html', '/grade.html', '/history.html']);
     if(!protectedPages.has(req.path)) return next();
     if(!req.session || !req.session.user) return res.redirect('/');
     try{
@@ -501,7 +501,7 @@ function startApp(){
       ${lockSelect}
       FROM exams_sessions es
       ${lockJoin}
-      ${where} ORDER BY es.created_at DESC LIMIT 200`;
+      ${where} ORDER BY es.created_at DESC LIMIT 1000`;
       try{
         const q = await pgPool.query(sql, params);
         const rows = q.rows || [];
@@ -566,6 +566,65 @@ function startApp(){
     }
 
     return data;
+  }
+
+  async function getStoredReviewForSession(sessionId){
+    if(!pgPool || !sessionId) return null;
+    const selectable = [];
+    if(examReviewsColumns.has('review')) selectable.push('review');
+    if(examReviewsColumns.has('scores')) selectable.push('scores');
+    if(examReviewsColumns.has('feedback')) selectable.push('feedback');
+    if(examReviewsColumns.has('reviewer_id')) selectable.push('reviewer_id');
+    if(selectable.length === 0) return null;
+
+    try{
+      const q = await pgPool.query(`SELECT ${selectable.join(', ')} FROM exam_reviews WHERE session_id = $1 LIMIT 1`, [sessionId]);
+      if(!q.rowCount) return null;
+
+      const row = q.rows[0] || {};
+      let parsedReview = row.review;
+      if(typeof parsedReview === 'string'){
+        try{ parsedReview = JSON.parse(parsedReview); }catch(_){ parsedReview = null; }
+      }
+
+      let grades = null;
+      let feedback = '';
+      let reviewerId = row.reviewer_id || '';
+
+      if(parsedReview && typeof parsedReview === 'object'){
+        const fromReview = Array.isArray(parsedReview.grades)
+          ? parsedReview.grades
+          : Array.isArray(parsedReview.scores)
+            ? parsedReview.scores
+            : null;
+        if(fromReview) grades = fromReview;
+        if(parsedReview.feedback != null) feedback = String(parsedReview.feedback);
+        if(parsedReview.reviewer && parsedReview.reviewer.id) reviewerId = parsedReview.reviewer.id;
+      }
+
+      if(!grades && row.scores != null){
+        let parsedScores = row.scores;
+        if(typeof parsedScores === 'string'){
+          try{ parsedScores = JSON.parse(parsedScores); }catch(_){ parsedScores = null; }
+        }
+        if(Array.isArray(parsedScores)) grades = parsedScores;
+      }
+
+      if(!feedback && row.feedback != null){
+        feedback = String(row.feedback);
+      }
+
+      if(!grades && !feedback && !reviewerId) return null;
+
+      return {
+        grades: Array.isArray(grades) ? grades : null,
+        feedback: feedback || '',
+        reviewerId: reviewerId || ''
+      };
+    }catch(e){
+      console.warn('Failed to fetch stored review for session', sessionId, e && e.message);
+      return null;
+    }
   }
 
   function normalizeExamType(examId){
@@ -788,7 +847,10 @@ function startApp(){
         if(q.rowCount>0){
           const row = q.rows[0];
           const payload = typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload;
-          return res.json(normalizeExamPayload(payload, row.id));
+          const normalized = normalizeExamPayload(payload, row.id);
+          const review = await getStoredReviewForSession(row.id);
+          if(review) normalized.review = review;
+          return res.json(normalized);
         }
       }catch(e){ console.warn('DB fetch exam failed', e && e.message) }
     }

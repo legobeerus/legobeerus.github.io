@@ -3,6 +3,7 @@
   const AUTH_SERVER = (window && window.__AUTH_SERVER__) || window.location.origin
   const params = new URLSearchParams(location.search)
   const sessionId = params.get('session') || ''
+  const archiveModeRequested = String(params.get('view') || '').toLowerCase() === 'archive'
   const reviewerEl = byId('reviewer')
   const sessionLabel = byId('sessionLabel')
   const questionsEl = byId('questions')
@@ -15,8 +16,82 @@
   let currentUser = null
   const PASS_PERCENT = 75
   const LOCK_HEARTBEAT_MS = 30000
+  const DRAFT_SAVE_DEBOUNCE_MS = 180
   let lockHeartbeatTimer = null
   let lockOwnedByMe = false
+  let sectionCounter = 0
+  let isArchiveMode = archiveModeRequested
+  const draftKey = sessionId ? `grade:draft:${sessionId}` : ''
+  let draftSaveTimer = null
+
+  function loadDraft(){
+    if(!draftKey || isArchiveMode) return null
+    try{
+      const raw = localStorage.getItem(draftKey)
+      if(!raw) return null
+      const parsed = JSON.parse(raw)
+      if(!parsed || typeof parsed !== 'object') return null
+      return parsed
+    }catch(_){ return null }
+  }
+
+  function saveDraftNow(){
+    if(!draftKey || isArchiveMode || !exam) return
+    try{
+      const manualScores = {}
+      questionsEl.querySelectorAll('input[name=score]').forEach(input=>{
+        manualScores[input.dataset.index] = input.value
+      })
+      const payload = {
+        feedback: byId('feedback') ? byId('feedback').value : '',
+        manualScores,
+        scrollY: Math.max(0, Math.round(window.scrollY || 0)),
+        updatedAt: Date.now()
+      }
+      localStorage.setItem(draftKey, JSON.stringify(payload))
+    }catch(_){ /* ignore localStorage failures */ }
+  }
+
+  function scheduleDraftSave(){
+    if(!draftKey || isArchiveMode) return
+    if(draftSaveTimer) clearTimeout(draftSaveTimer)
+    draftSaveTimer = setTimeout(()=>{
+      draftSaveTimer = null
+      saveDraftNow()
+    }, DRAFT_SAVE_DEBOUNCE_MS)
+  }
+
+  function clearDraft(){
+    if(!draftKey) return
+    try{ localStorage.removeItem(draftKey) }catch(_){ /* ignore */ }
+  }
+
+  function restoreScrollFast(scrollY){
+    const y = Number(scrollY)
+    if(!Number.isFinite(y) || y <= 0) return
+    const jump = ()=> window.scrollTo(0, y)
+    jump()
+    requestAnimationFrame(jump)
+    setTimeout(jump, 80)
+    setTimeout(jump, 260)
+  }
+
+  function restoreDraftState(){
+    const draft = loadDraft()
+    if(!draft) return false
+    const feedback = byId('feedback')
+    if(feedback && typeof draft.feedback === 'string') feedback.value = draft.feedback
+    if(draft.manualScores && typeof draft.manualScores === 'object'){
+      Object.keys(draft.manualScores).forEach(index=>{
+        const input = questionsEl.querySelector(`input[name=score][data-index="${index}"]`)
+        if(!input) return
+        input.value = draft.manualScores[index]
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    restoreScrollFast(draft.scrollY)
+    return true
+  }
 
   sessionLabel.textContent = sessionId ? `Session: ${sessionId}` : 'No session specified.'
 
@@ -24,22 +99,92 @@
 
   let exam = null
 
+  function isMultipleChoiceKind(kind){
+    const text = String(kind || '').toLowerCase().trim()
+    return text === 'multiplechoice' || text === 'multiple-choice' || text === 'mc'
+  }
+
+  function isSelectionKind(kind){
+    const text = String(kind || '').toLowerCase().trim()
+    return text === 'selection' || text === 'multiselect' || text === 'multi-select' || text === 'select'
+  }
+
+  function isSectionKind(kind){
+    const text = String(kind || '').toLowerCase().trim()
+    return text === 'section'
+  }
+
+  function parseChoiceToken(value){
+    const text = String(value || '').trim()
+    if(!text) return ''
+    return String(text.split(/\)|\.|\s/)[0] || '').trim().toLowerCase()
+  }
+
+  function normalizeSelectionSet(raw){
+    if(raw == null) return new Set()
+    if(Array.isArray(raw)){
+      return new Set(raw.map(item=>parseChoiceToken(item)).filter(Boolean))
+    }
+
+    const text = String(raw).trim()
+    if(!text) return new Set()
+
+    // Accept formats like "A,C", "A C", "A|C", "A/C", "[A, C]", and "AC".
+    const splitParts = text
+      .replace(/[\[\](){}]/g, ' ')
+      .split(/[\s,;|/]+/)
+      .map(part=>part.trim())
+      .filter(Boolean)
+
+    if(splitParts.length > 1){
+      return new Set(splitParts.map(part=>parseChoiceToken(part)).filter(Boolean))
+    }
+
+    if(/^[A-Za-z]{2,}$/.test(text)){
+      return new Set(text.toLowerCase().split('').map(part=>part.trim()).filter(Boolean))
+    }
+
+    const token = parseChoiceToken(text)
+    return token ? new Set([token]) : new Set()
+  }
+
+  function setsEqual(a, b){
+    if(a.size !== b.size) return false
+    for(const value of a){
+      if(!b.has(value)) return false
+    }
+    return true
+  }
+
   function renderExam(data){
     exam = data
+    isArchiveMode = archiveModeRequested
+    const savedReview = data && data.review && typeof data.review === 'object' ? data.review : null
+    const savedGrades = savedReview && Array.isArray(savedReview.grades) ? savedReview.grades : null
+    const savedFeedback = savedReview && savedReview.feedback != null ? String(savedReview.feedback) : ''
+    let archivedGradeCursor = 0
+
+    if(isArchiveMode){
+      reviewerEl.textContent = 'Archive view (read-only)'
+    }
+
     if(currentUser){
       const tag = currentUser.discriminator ? `#${currentUser.discriminator}` : ''
-      reviewerEl.textContent = `${currentUser.username || 'Reviewer'}${tag}`
+      if(!isArchiveMode) reviewerEl.textContent = `${currentUser.username || 'Reviewer'}${tag}`
     } else if(data.reviewer){
-      reviewerEl.textContent = `${data.reviewer.username}#${data.reviewer.discriminator}`
+      if(!isArchiveMode) reviewerEl.textContent = `${data.reviewer.username}#${data.reviewer.discriminator}`
     } else {
-      reviewerEl.textContent = ''
+      if(!isArchiveMode) reviewerEl.textContent = ''
     }
     const candidate = data.candidateMention || data.candidate_name || data.userId || (data.user && data.user.username) || 'unknown'
     sessionLabel.textContent = `Session: ${data.examId || data.id || sessionId} — Candidate: ${candidate}`
 
     const answersByIndex = new Map((data.answers || []).map(a => [a.index, a.answer]))
     exam.answersByIndex = answersByIndex
-    const totalPossible = (data.questions || []).reduce((sum,q)=>sum + (Number(q.maxScore ?? 1) || 1), 0)
+    const totalPossible = (data.questions || []).reduce((sum, q)=>{
+      if(isSectionKind(q && q.type)) return sum
+      return sum + (Number(q && q.maxScore != null ? q.maxScore : 1) || 1)
+    }, 0)
     exam.maxScore = totalPossible
     byId('totalPossible').textContent = `Total possible: ${totalPossible}`
 
@@ -49,54 +194,98 @@
     }
 
     questionsEl.innerHTML = ''
+    sectionCounter = 0
     data.questions.forEach((q, idx)=>{
+      const kind = String(q && q.type || '').toLowerCase().trim()
+      const isSection = isSectionKind(kind)
+
+      if(isSection){
+        sectionCounter += 1
+        const divider = document.createElement('div')
+        divider.className = 'exam-section-divider'
+        const sectionTitle = q.title || q.sectionTitle || q.section_title || q.sectionName || q.section_name || `Section ${sectionCounter}`
+        const sectionDescription = q.description || q.desc || q.sectionDescription || q.section_description || ''
+        divider.innerHTML = `<span>${escapeHtml(sectionTitle)}</span>${sectionDescription ? `<p class="exam-section-divider__description">${escapeHtml(sectionDescription)}</p>` : ''}`
+        questionsEl.appendChild(divider)
+        q._isSection = true
+        q._autoScore = 0
+        return
+      }
+
       const maxScore = Number(q.maxScore ?? 1) || 1
-      const kind = String(q.type || '').toLowerCase().trim()
-      const isMC = kind === 'multiplechoice' || kind === 'multiple-choice' || kind === 'mc'
+      const isMC = isMultipleChoiceKind(kind)
+      const isSelection = isSelectionKind(kind)
+      const isAuto = isMC || isSelection
       const isText = kind === '' || kind === 'text'
+      const hasArchivedScore = savedGrades && archivedGradeCursor < savedGrades.length
+      const archivedScore = hasArchivedScore ? Number(savedGrades[archivedGradeCursor]) : null
+      const archivedScoreSafe = Number.isFinite(archivedScore) ? archivedScore : 0
+      archivedGradeCursor += 1
       const answerValue = answersByIndex.get(idx) ?? ''
       const answerNormalized = String(answerValue || '').trim()
       const correctAnswerRaw = q.correctAnswer || q.correct_answer || ''
       const correctNormalized = String(correctAnswerRaw || '').trim()
+      const selectionAnswerSet = isSelection ? normalizeSelectionSet(answerValue) : new Set()
+      const selectionCorrectSet = isSelection ? normalizeSelectionSet(correctAnswerRaw) : new Set()
       const div = document.createElement('div')
       div.className = 'question'
 
       let scoreInput = ''
       if(isText){
-        scoreInput = `<label>Score: <input type="number" min="0" max="${maxScore}" step="1" name="score" data-index="${idx}" value="0"></label>`
+        const value = isArchiveMode ? archivedScoreSafe : 0
+        const disabledAttr = isArchiveMode ? ' disabled' : ''
+        scoreInput = `<label>Score: <input type="number" min="0" max="${maxScore}" step="1" name="score" data-index="${idx}" value="${value}"${disabledAttr}></label>`
       }
 
       let choicesHtml = ''
-      if(isMC && Array.isArray(q.choices)){
+      if(isAuto && Array.isArray(q.choices)){
         choicesHtml = `<div class="choices"><strong>Choices:</strong><ul>`
         q.choices.forEach(choice=>{
           const rawChoice = typeof choice === 'string' ? choice : choice.value ?? choice.label ?? choice.text ?? ''
           const label = typeof choice === 'string' ? choice : choice.label || choice.text || choice.value || ''
           const choiceNormalized = String(rawChoice || '').trim()
-          const choiceKey = String(choiceNormalized.split(/\)|\.|\s/)[0]) || ''
-          const isSelected = answerNormalized !== '' && (answerNormalized === choiceNormalized || answerNormalized === choiceKey)
-          const isCorrect = correctNormalized !== '' && (choiceNormalized === correctNormalized || choiceKey === correctNormalized)
-          const icon = isSelected ? (isCorrect ? '✅' : '❌') : '▫️'
+          const choiceKey = parseChoiceToken(choiceNormalized)
+          let isSelected = false
+          let isCorrect = false
+          if(isSelection){
+            isSelected = selectionAnswerSet.has(choiceKey)
+            isCorrect = selectionCorrectSet.has(choiceKey)
+          }else{
+            isSelected = answerNormalized !== '' && (answerNormalized === choiceNormalized || answerNormalized.toLowerCase() === choiceKey)
+            isCorrect = correctNormalized !== '' && (choiceNormalized === correctNormalized || correctNormalized.toLowerCase() === choiceKey)
+          }
+          const icon = isSelected ? (isCorrect ? '✅' : '❌') : (isCorrect && isSelection ? '🟩' : '▫️')
           choicesHtml += `<li style="margin:4px 0">${icon} ${escapeHtml(label)}</li>`
         })
         choicesHtml += '</ul></div>'
       }
 
-      const isCorrectAnswer = isMC && answerNormalized !== '' && (answerNormalized === correctNormalized || answerNormalized === String(correctAnswerRaw).trim())
-      const mcStatus = isMC
+      const isCorrectAnswer = isSelection
+        ? selectionCorrectSet.size > 0 && setsEqual(selectionAnswerSet, selectionCorrectSet)
+        : isMC && answerNormalized !== '' && (answerNormalized === correctNormalized || answerNormalized === String(correctAnswerRaw).trim())
+      const autoStatus = isAuto
         ? `<div class="mc-result">${isCorrectAnswer ? 'Correct' : 'Incorrect'} - ${isCorrectAnswer ? maxScore : 0} points</div>`
         : ''
+      const textReference = isText && correctNormalized !== ''
+        ? `<div class="answer"><strong>Correct answer:</strong> ${escapeHtml(correctAnswerRaw)}</div>`
+        : ''
 
-      if(isMC){
+      if(isAuto){
         div.classList.add('mc-question', isCorrectAnswer ? 'mc-correct' : 'mc-incorrect')
-        q._autoScore = isCorrectAnswer ? maxScore : 0
+        q._autoScore = isArchiveMode && Number.isFinite(archivedScore) ? archivedScoreSafe : (isCorrectAnswer ? maxScore : 0)
       }
+
+      const archivedAwarded = isArchiveMode && Number.isFinite(archivedScore)
+        ? `<div class="answer"><strong>Awarded:</strong> ${archivedScoreSafe}/${maxScore}</div>`
+        : ''
 
       div.innerHTML = `<div class="qmeta">Q${idx+1} (max ${maxScore})</div>
         <div class="prompt"><strong>Question:</strong> ${escapeHtml(q.text || q.prompt || q.question || '')}</div>
         <div class="answer"><strong>Answer:</strong> ${escapeHtml(answerValue)}</div>
+        ${archivedAwarded}
+        ${textReference}
         ${choicesHtml}
-        ${mcStatus}
+        ${autoStatus}
         ${scoreInput}`
       questionsEl.appendChild(div)
     })
@@ -111,10 +300,32 @@
         input.setAttribute('aria-invalid', overMax ? 'true' : 'false')
       }
       input.addEventListener('input', updateScoreState)
+      input.addEventListener('input', scheduleDraftSave)
       updateScoreState()
     })
 
+    const feedback = byId('feedback')
+    if(feedback && !feedback.dataset.draftBound){
+      feedback.addEventListener('input', scheduleDraftSave)
+      feedback.dataset.draftBound = '1'
+    }
+
+    const restored = restoreDraftState()
+    if(restored && !isArchiveMode){
+      resultEl.textContent = 'Restored unsent draft from your last session.'
+    }
+
+    const feedbackEl = byId('feedback')
+    if(feedbackEl && savedFeedback){
+      feedbackEl.value = savedFeedback
+    }
+
     hidePreview()
+    if(isArchiveMode){
+      setFormControlsEnabled(false)
+      setInputsEnabled(false)
+      resultEl.textContent = 'Archive mode: read-only view of stored graded answers.'
+    }
   }
 
   function getPreviewState(){
@@ -256,9 +467,11 @@
       if(resp.status===401||resp.status===403){ location.href = `${AUTH_SERVER}/auth/discord?next=${encodeURIComponent(location.pathname+location.search)}`; return }
       const data = await resp.json()
       renderExam(data)
-      await acquireOrRefreshLock('claim')
-      if(lockOwnedByMe){
-        startLockHeartbeat()
+      if(!isArchiveMode){
+        await acquireOrRefreshLock('claim')
+        if(lockOwnedByMe){
+          startLockHeartbeat()
+        }
       }
     }catch(e){ console.error(e); resultEl.textContent = 'Failed to load exam.' }
   }
@@ -292,9 +505,13 @@
 
   function collectScores(){
     if(!exam) return null
-    return exam.questions.map((q, idx) => {
-      const isMC = String(q.type || '').toLowerCase().trim() === 'multiplechoice'
-      if(isMC) return Number(q._autoScore || 0)
+    return exam.questions
+      .map((q, idx) => ({ q, idx }))
+      .filter(({ q }) => !isSectionKind(q && q.type))
+      .map(({ q, idx }) => {
+      const kind = String(q.type || '').toLowerCase().trim()
+      const isAuto = isMultipleChoiceKind(kind) || isSelectionKind(kind)
+      if(isAuto) return Number(q._autoScore || 0)
       const input = questionsEl.querySelector(`input[name=score][data-index="${idx}"]`)
       if(!input){ resultEl.textContent='Missing score input'; throw new Error('invalid') }
       const v = Number(input.value)
@@ -307,6 +524,10 @@
 
   form.addEventListener('submit', async (ev)=>{
     ev.preventDefault(); resultEl.textContent=''
+    if(isArchiveMode){
+      resultEl.textContent = 'Archive mode is read-only.'
+      return
+    }
     let scores
     try{ scores = collectScores() }catch(e){ return }
     const feedback = byId('feedback').value || ''
@@ -335,6 +556,7 @@
         resultEl.textContent = `Error: ${data.message || data.error || resp.status}`; setFormControlsEnabled(true); form.classList.remove('is-submitting'); if(submitBtn) submitBtn.textContent = 'Submit Grades'; return
       }
       resultEl.textContent = 'Submitted successfully.'
+      clearDraft()
       hidePreview()
       setFormControlsEnabled(false)
       setInputsEnabled(false)
@@ -350,7 +572,13 @@
   fetchCurrentUser()
   if(sessionId) fetchExam()
 
+  if(!isArchiveMode){
+    window.addEventListener('scroll', scheduleDraftSave, { passive: true })
+    window.addEventListener('pagehide', saveDraftNow)
+  }
+
   window.addEventListener('beforeunload', ()=>{
-    releaseLockBestEffort()
+    if(!isArchiveMode) saveDraftNow()
+    if(!isArchiveMode) releaseLockBestEffort()
   })
 })();
