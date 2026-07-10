@@ -8,6 +8,7 @@
   const sessionLabel = byId('sessionLabel')
   const questionsEl = byId('questions')
   const form = byId('gradeForm')
+  const gradingPageEl = document.querySelector('.grading-page')
   const previewBtn = byId('previewBtn')
   const previewArea = byId('previewArea')
   const previewText = byId('previewText')
@@ -91,6 +92,77 @@
     }
     restoreScrollFast(draft.scrollY)
     return true
+  }
+
+  function getNavOffset(){
+    const nav = document.querySelector('.nav')
+    return (nav && nav.offsetHeight ? nav.offsetHeight : 72) + 20
+  }
+
+  function fastScrollToY(targetY){
+    const startY = window.scrollY || 0
+    const endY = Math.max(0, Number(targetY) || 0)
+    const distance = endY - startY
+    if(Math.abs(distance) < 4){
+      window.scrollTo(0, endY)
+      return
+    }
+    const duration = 180
+    const startTime = performance.now()
+    const easeOut = value => 1 - Math.pow(1 - value, 3)
+
+    function tick(now){
+      const elapsed = now - startTime
+      const progress = Math.min(1, elapsed / duration)
+      window.scrollTo(0, Math.round(startY + (distance * easeOut(progress))))
+      if(progress < 1) requestAnimationFrame(tick)
+    }
+
+    requestAnimationFrame(tick)
+  }
+
+  function removeSectionsToc(){
+    const toc = byId('sectionsToc')
+    if(toc) toc.remove()
+    if(gradingPageEl) gradingPageEl.classList.remove('grading-page--with-toc')
+  }
+
+  function renderSectionsToc(sections){
+    removeSectionsToc()
+    if(!gradingPageEl || !sections || sections.length < 2) return
+
+    const toc = document.createElement('aside')
+    toc.id = 'sectionsToc'
+    toc.className = 'grade-sections-toc'
+
+    const title = document.createElement('div')
+    title.className = 'grade-sections-toc__title'
+    title.textContent = 'Sections'
+    toc.appendChild(title)
+
+    const list = document.createElement('div')
+    list.className = 'grade-sections-toc__list'
+
+    sections.forEach((section, index)=>{
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'grade-sections-toc__item'
+      if(index === 0) btn.classList.add('is-active')
+      btn.textContent = section.title
+      btn.addEventListener('click', ()=>{
+        list.querySelectorAll('.grade-sections-toc__item').forEach(item=>item.classList.remove('is-active'))
+        btn.classList.add('is-active')
+        const target = document.getElementById(section.id)
+        if(!target) return
+        const targetY = window.scrollY + target.getBoundingClientRect().top - getNavOffset()
+        fastScrollToY(targetY)
+      })
+      list.appendChild(btn)
+    })
+
+    toc.appendChild(list)
+    gradingPageEl.appendChild(toc)
+    gradingPageEl.classList.add('grading-page--with-toc')
   }
 
   sessionLabel.textContent = sessionId ? `Session: ${sessionId}` : 'No session specified.'
@@ -195,6 +267,7 @@
 
     questionsEl.innerHTML = ''
     sectionCounter = 0
+    const sections = []
     data.questions.forEach((q, idx)=>{
       const kind = String(q && q.type || '').toLowerCase().trim()
       const isSection = isSectionKind(kind)
@@ -204,9 +277,11 @@
         const divider = document.createElement('div')
         divider.className = 'exam-section-divider'
         const sectionTitle = q.title || q.sectionTitle || q.section_title || q.sectionName || q.section_name || `Section ${sectionCounter}`
-        const sectionDescription = q.description || q.desc || q.sectionDescription || q.section_description || ''
-        divider.innerHTML = `<span>${escapeHtml(sectionTitle)}</span>${sectionDescription ? `<p class="exam-section-divider__description">${escapeHtml(sectionDescription)}</p>` : ''}`
+        const sectionId = `exam-section-${sectionCounter}`
+        divider.id = sectionId
+        divider.innerHTML = `<span>${escapeHtml(sectionTitle)}</span>`
         questionsEl.appendChild(divider)
+        sections.push({ id: sectionId, title: sectionTitle })
         q._isSection = true
         q._autoScore = 0
         return
@@ -319,6 +394,8 @@
     if(feedbackEl && savedFeedback){
       feedbackEl.value = savedFeedback
     }
+
+    renderSectionsToc(sections)
 
     hidePreview()
     if(isArchiveMode){
