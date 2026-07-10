@@ -29,6 +29,9 @@ body{background:var(--bg);color:var(--fg);-webkit-font-smoothing:antialiased;pad
 .btn{display:inline-block;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:600}
 .btn-primary{background:var(--primary);color:#000}
 .btn-ghost{border:1px solid rgba(255,255,255,0.08);color:var(--fg);background:transparent}
+.btn:visited{color:inherit;text-decoration:none}
+.btn-ghost:visited{color:var(--fg)}
+.btn-primary:visited{color:#000}
 
 /* Hero */
 .hero{position:relative;padding:80px 0;background-size:cover;background-position:center;color:var(--fg);overflow:hidden}
@@ -82,6 +85,26 @@ h2{color:var(--fg);margin-top:28px}
 a{color:var(--primary);text-decoration:none}
 a:visited{color:var(--link-visited)}
 a:hover,a:focus,a:active{color:var(--accent);text-decoration:none}
+
+/* Buttons should not inherit global visited-link colors */
+a.btn,
+a.btn:visited,
+a.btn:hover,
+a.btn:focus,
+a.btn:active{
+  text-decoration:none;
+}
+a.btn.btn-ghost,
+a.btn.btn-ghost:visited,
+a.btn.btn-ghost:hover,
+a.btn.btn-ghost:focus,
+a.btn.btn-ghost:active{
+  color:var(--fg);
+}
+a.btn.btn-primary,
+a.btn.btn-primary:visited{
+  color:#000;
+}
 
 /* Brand (AgentOS) should remain white in the nav */
 .nav .brand, a.brand{color:var(--fg);text-decoration:none}
@@ -164,6 +187,7 @@ a:hover,a:focus,a:active{color:var(--accent);text-decoration:none}
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 
 /* Grading page styles */
+.content.grading{padding-top:52px}
 .grading .question{
   position:relative;
   background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));
@@ -366,6 +390,8 @@ a:hover,a:focus,a:active{color:var(--accent);text-decoration:none}
   margin-bottom:8px;
 }
 .dashboard-header h1{margin:0}
+.history-page{padding-top:52px}
+.grading-page{padding-top:52px}
 
 .dashboard-grid{
   display:grid;

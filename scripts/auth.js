@@ -57,14 +57,17 @@
     const menu = document.createElement('div')
     menu.className = 'auth-menu-dropdown'
     menu.style.position = 'absolute'
-    menu.style.background = 'linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01))'
-    menu.style.border = '1px solid rgba(255,255,255,0.04)'
+    menu.style.background = 'linear-gradient(180deg, rgba(18,18,18,0.98), rgba(10,10,10,0.98))'
+    menu.style.border = '1px solid rgba(255,255,255,0.08)'
+    menu.style.boxShadow = '0 18px 40px rgba(0,0,0,0.42)'
+    menu.style.backdropFilter = 'blur(10px)'
     menu.style.padding = '8px'
     menu.style.borderRadius = '8px'
     menu.style.minWidth = '160px'
     menu.style.display = 'none'
     menu.style.right = '0'
     menu.style.marginTop = '8px'
+    menu.style.zIndex = '60'
 
     const profile = document.createElement('a')
     profile.href = '/profile.html'
