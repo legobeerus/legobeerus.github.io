@@ -383,9 +383,6 @@
       const autoStatus = isAuto
         ? `<div class="mc-result">${isCorrectAnswer ? 'Correct' : 'Incorrect'} - ${isCorrectAnswer ? maxScore : 0} points</div>`
         : ''
-      const textReference = isText && correctNormalized !== ''
-        ? `<div class="answer"><strong>Correct answer:</strong> ${escapeHtml(correctAnswerRaw)}</div>`
-        : ''
 
       if(isAuto){
         div.classList.add('mc-question', isCorrectAnswer ? 'mc-correct' : 'mc-incorrect')
@@ -400,7 +397,6 @@
         <div class="prompt"><strong>Question:</strong> ${escapeHtml(q.text || q.prompt || q.question || '')}</div>
         <div class="answer"><strong>Answer:</strong> ${escapeHtml(answerValue)}</div>
         ${archivedAwarded}
-        ${textReference}
         ${choicesHtml}
         ${autoStatus}
         ${scoreInput}`
