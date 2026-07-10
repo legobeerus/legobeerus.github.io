@@ -98,7 +98,7 @@
     list.forEach(item=>{
       const row = document.createElement('div')
       row.className = 'profile-activity__item'
-      const passed = item.passed ? 'Passed' : 'Needs review'
+      const passed = item.passed ? 'Passed' : 'Failed'
       row.innerHTML = `
         <div>
           <div class="profile-activity__title">${item.exam_type || 'exam'} · ${item.exam_id || item.session_id}</div>

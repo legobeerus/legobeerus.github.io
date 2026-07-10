@@ -11,6 +11,12 @@
   function formatDate(value){
     if(!value) return ''
     const text = String(value)
+    const discordSnowflakeLike = /^\d{16,22}$/.test(text)
+    if(discordSnowflakeLike){
+      const epoch = Number((BigInt(text) >> 22n) + 1420070400000n)
+      const date = new Date(epoch)
+      if(!Number.isNaN(date.getTime())) return date.toLocaleString()
+    }
     const isoLike = text.length === 14 && /^\d+$/.test(text)
     if(isoLike){
       const year = Number(text.slice(0,4))
@@ -57,7 +63,7 @@
 
   function searchableText(item){
     const examId = item.exam_id || item.examId || ''
-    const candidate = item.candidate_mention || item.candidate || item.candidate_name || item.userId || ''
+    const candidate = item.candidate_mention || item.candidate_username || item.candidateName || item.candidate_name || item.candidate || item.username || item.userId || ''
     const createdAt = formatDate(item.created_at)
     const rawDate = item.created_at || ''
     const sessionId = item.id || ''
@@ -66,7 +72,7 @@
 
   function cardData(item){
     const examId = item.exam_id || item.examId || item.id
-    const candidate = item.candidate_mention || item.candidate || item.candidate_name || item.userId || 'Unknown candidate'
+    const candidate = item.candidate_mention || item.candidate_username || item.candidateName || item.candidate_name || item.candidate || item.username || item.userId || 'Unknown candidate'
     const createdAt = formatDate(item.created_at)
     const phaseLabel = /phase\s*4/i.test(String(examId)) ? 'Phase 4 review' : 'Phase 1 review'
     return { examId, candidate, createdAt, phaseLabel }

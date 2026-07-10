@@ -388,10 +388,11 @@ a.btn.btn-primary:visited{
   justify-content:space-between;
   gap:12px;
   margin-bottom:8px;
+  margin-top:30px;
 }
 .dashboard-header h1{margin:0}
-.history-page{padding-top:52px}
-.grading-page{padding-top:52px}
+.history-page{padding-top:22px}
+.grading-page{padding-top:22px}
 
 .dashboard-grid{
   display:grid;

@@ -10,6 +10,12 @@
   function formatDate(value){
     if(!value) return ''
     const text = String(value)
+    const discordSnowflakeLike = /^\d{16,22}$/.test(text)
+    if(discordSnowflakeLike){
+      const epoch = Number((BigInt(text) >> 22n) + 1420070400000n)
+      const date = new Date(epoch)
+      if(!Number.isNaN(date.getTime())) return date.toLocaleString()
+    }
     const isoLike = text.length === 14 && /^\d+$/.test(text)
     if(isoLike){
       const year = Number(text.slice(0,4))
@@ -50,7 +56,7 @@
       a.className = 'dashboard-card'
       a.href = `grade.html?session=${encodeURIComponent(it.id)}`
       const examId = it.exam_id || it.examId || it.id
-      const candidate = it.candidate_mention || it.candidate || it.candidate_name || it.userId || 'Unknown candidate'
+      const candidate = it.candidate_mention || it.candidate_username || it.candidateName || it.candidate_name || it.candidate || it.username || it.userId || 'Unknown candidate'
       const createdAt = formatDate(it.created_at)
       const phaseLabel = /phase\s*4/i.test(String(examId)) ? 'Phase 4 review' : 'Phase 1 review'
       const lockName = String(it.under_review_by || '').trim()

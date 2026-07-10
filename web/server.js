@@ -496,8 +496,25 @@ function startApp(){
     const sql = `SELECT es.id,
       es.exam_id,
       es.status,
-      COALESCE(es.payload::jsonb->>'candidate_mention', es.payload::jsonb->>'candidateMention', es.payload::jsonb->>'candidate', es.payload::jsonb->>'candidate_name', es.payload::jsonb->>'userId') AS candidate_mention,
-      COALESCE(es.payload::jsonb->>'createdAt', to_char(es.created_at, 'YYYYMMDDHH24MISS')) AS created_at
+      COALESCE(
+        es.payload::jsonb->>'candidate_mention',
+        es.payload::jsonb->>'candidateMention',
+        es.payload::jsonb->>'candidate_username',
+        es.payload::jsonb->>'candidateUsername',
+        es.payload::jsonb->>'candidate_name',
+        es.payload::jsonb->>'candidateName',
+        es.payload::jsonb->>'username',
+        es.payload::jsonb->>'user_name',
+        es.payload::jsonb->>'candidate',
+        es.payload::jsonb->>'userId'
+      ) AS candidate_mention,
+      COALESCE(
+        es.payload::jsonb->>'submittedAt',
+        es.payload::jsonb->>'submitted_at',
+        es.payload::jsonb->>'createdAt',
+        es.payload::jsonb->>'created_at',
+        to_char(es.created_at, 'YYYYMMDDHH24MISS')
+      ) AS created_at
       ${lockSelect}
       FROM exams_sessions es
       ${lockJoin}
@@ -516,7 +533,7 @@ function startApp(){
 
   function normalizeExamPayload(payload, examId){
     const data = { id: examId, ...payload };
-    data.candidateMention = payload.candidate_mention || payload.candidateMention || payload.candidate || payload.candidate_name || payload.userId || (payload.user && payload.user.username) || 'unknown';
+    data.candidateMention = payload.candidate_mention || payload.candidateMention || payload.candidate_username || payload.candidateUsername || payload.candidate_name || payload.candidateName || payload.username || payload.user_name || payload.candidate || payload.userId || (payload.user && payload.user.username) || 'unknown';
     data.status = payload.status || payload.phase_status || payload.phase || 'pending';
     data.examId = payload.examId || payload.exam_id || payload.exam || examId || 'unknown';
     data.phase = payload.phase || (typeof data.examId === 'string' && data.examId.match(/phase\d+/i)?.[0]) || null;
