@@ -179,6 +179,7 @@
         if(!target) return
         const targetY = window.scrollY + target.getBoundingClientRect().top - getNavOffset()
         fastScrollToY(targetY)
+        btn.blur()
       })
       list.appendChild(btn)
     })

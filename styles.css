@@ -426,7 +426,24 @@ a.btn.btn-primary:visited{
   background:rgba(245,215,122,0.08);
   color:var(--accent);
 }
+.grade-sections-toc__item:focus:not(:focus-visible){
+  transform:none;
+  border-color:rgba(255,255,255,0.06);
+  background:rgba(255,255,255,0.03);
+  color:var(--fg);
+}
+.grade-sections-toc__item:focus-visible{
+  outline:2px solid rgba(245,215,122,0.45);
+  outline-offset:2px;
+}
 .grade-sections-toc__item.is-active{
+  border-color:rgba(0,175,241,0.34);
+  background:rgba(0,175,241,0.12);
+  color:#bfefff;
+}
+.grade-sections-toc__item.is-active:focus,
+.grade-sections-toc__item.is-active:focus-visible,
+.grade-sections-toc__item.is-active:hover{
   border-color:rgba(0,175,241,0.34);
   background:rgba(0,175,241,0.12);
   color:#bfefff;
