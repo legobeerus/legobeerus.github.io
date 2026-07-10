@@ -354,7 +354,7 @@ a.btn.btn-primary:visited{
 .dm-preview-card__failed{color:#ff9d9d}
 .grading #questions{margin-top:12px}
 .grading-page{position:relative}
-.grading-page--with-toc{padding-right:250px}
+.grading-page--with-toc{padding-right:0}
 .exam-section-divider{
   margin:16px 0 10px;
   display:flex;
@@ -381,7 +381,7 @@ a.btn.btn-primary:visited{
 .grade-sections-toc{
   position:fixed;
   top:calc(var(--nav-height) + 88px);
-  right:max(20px, calc((100vw - var(--max-width)) / 2 + 20px));
+  right:20px;
   width:210px;
   padding:14px;
   border-radius:14px;
