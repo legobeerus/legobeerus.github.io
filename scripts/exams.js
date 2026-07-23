@@ -2,6 +2,7 @@
   const statusMsg = document.getElementById('statusMsg')
   const phase1List = document.getElementById('phase1List')
   const phase4List = document.getElementById('phase4List')
+  const STORAGE_KEY = 'agentos.dashboard.seen.exams'
 
   function el(tag, txt){ const e = document.createElement(tag); if(txt!=null) e.textContent = txt; return e }
 
@@ -106,6 +107,14 @@
     return status === 'active'
   }
 
+  function writeSeenAt(value){
+    try{
+      localStorage.setItem(STORAGE_KEY, String(value || Date.now()))
+    }catch(_){
+      /* ignore storage failures */
+    }
+  }
+
   async function load(){
     statusMsg.textContent = 'Checking login...'
     const user = await ensureAuth()
@@ -134,6 +143,13 @@
 
       renderList(phase1List, mergeUniqueLists([phase1Items]))
       renderList(phase4List, mergeUniqueLists([phase4Items]))
+
+      const latestTime = items.reduce((max, item)=>{
+        const candidate = item && (item.created_at || item.createdAt || item.updated_at || item.updatedAt)
+        const parsed = candidate ? new Date(candidate) : null
+        return parsed && !Number.isNaN(parsed.getTime()) ? Math.max(max, parsed.getTime()) : max
+      }, 0)
+      if(latestTime) writeSeenAt(latestTime)
     }catch(e){ console.error(e); statusMsg.textContent='Failed to load exams' }
   }
 

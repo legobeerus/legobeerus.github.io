@@ -8,6 +8,7 @@
   const profileRoles = document.getElementById('aosProfileFacts')
   const profileStats = document.getElementById('aosProfileStats')
   const warrantList = document.getElementById('aosWarrantsList')
+  const STORAGE_KEY = 'agentos.dashboard.seen.aos'
 
   function U(){
     return window.AOS_UTILS || {}
@@ -15,6 +16,24 @@
 
   function usernameFromQuery(){
     return new URLSearchParams(window.location.search).get('username') || ''
+  }
+
+  function readSeenAt(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY)
+      const value = raw ? Number(raw) : 0
+      return Number.isFinite(value) ? value : 0
+    }catch(_){
+      return 0
+    }
+  }
+
+  function writeSeenAt(value){
+    try{
+      localStorage.setItem(STORAGE_KEY, String(value || Date.now()))
+    }catch(_){
+      /* ignore storage failures */
+    }
   }
 
   function ensureAuth(){
@@ -72,6 +91,17 @@
         ${tags.map(tag => `<span class="aos-tag">${utils.tagLabel ? utils.tagLabel(tag) : tag}</span>`).join('')}
       </div>
     `
+  }
+
+  async function loadWarrantsForUsername(username){
+    const personResp = await fetch(`${AUTH_SERVER}/api/aos/person/${encodeURIComponent(username)}`, { credentials: 'include' })
+    if(personResp.ok) return await personResp.json()
+
+    const fallbackResp = await fetch(`${AUTH_SERVER}/api/aos/active`, { credentials: 'include' })
+    if(!fallbackResp.ok) throw new Error(`aos fetch failed (${fallbackResp.status})`)
+    const fallbackData = await fallbackResp.json()
+    const normalized = (Array.isArray(fallbackData) ? fallbackData : []).map(item => (U().normalizeWarrant ? U().normalizeWarrant(item) : item))
+    return normalized.filter(item => String(item.username || '').toLowerCase() === username.toLowerCase())
   }
 
   function cardHtml(warrant){
@@ -151,8 +181,8 @@
     statusMsg.textContent = `Signed in as ${me.username}#${me.discriminator}. Loading warrant profile...`
 
     try{
-      const resp = await fetch(`${AUTH_SERVER}/api/aos/active`, { credentials: 'include' })
-      if(resp.status === 403){
+      const response = await fetch(`${AUTH_SERVER}/api/aos/person/${encodeURIComponent(targetUsername)}`, { credentials: 'include' })
+      if(response.status === 403){
         statusMsg.textContent = 'Access denied: your Discord account is missing the required AOS role.'
         profileName.textContent = 'Access denied'
         profileHandle.textContent = 'Your Discord account is missing the required AOS role.'
@@ -162,20 +192,23 @@
         renderEmpty('Access denied.')
         return
       }
-      if(!resp.ok){
-        statusMsg.textContent = `Failed to load AOS profile (${resp.status})`
-        renderEmpty('Unable to load warrant profile.')
-        return
-      }
-
-      const data = await resp.json()
-      const normalized = (Array.isArray(data) ? data : []).map(item => (U().normalizeWarrant ? U().normalizeWarrant(item) : item))
-      const warrants = normalized.filter(item => String(item.username || '').toLowerCase() === targetUsername.toLowerCase())
+      const data = response.ok ? await response.json() : await loadWarrantsForUsername(targetUsername)
+      const warrants = (Array.isArray(data) ? data : []).map(item => (U().normalizeWarrant ? U().normalizeWarrant(item) : item))
         .sort((a, b) => {
           const aTime = new Date(a.activatedAt || a.createdAt || 0).getTime()
           const bTime = new Date(b.activatedAt || b.createdAt || 0).getTime()
           return bTime - aTime
         })
+
+      if(response.ok && !warrants.length){
+        // If the dedicated endpoint is empty, one fallback pass keeps the page from appearing stuck.
+        const fallbackWarrants = await loadWarrantsForUsername(targetUsername)
+        warrants.push(...fallbackWarrants.sort((a, b) => {
+          const aTime = new Date(a.activatedAt || a.createdAt || 0).getTime()
+          const bTime = new Date(b.activatedAt || b.createdAt || 0).getTime()
+          return bTime - aTime
+        }))
+      }
 
       if(!warrants.length){
         profileName.textContent = targetUsername
@@ -233,6 +266,7 @@
 
       warrantList.appendChild(grid)
       statusMsg.textContent = `Signed in as ${me.username}#${me.discriminator}.`
+      writeSeenAt(new Date(latest.activatedAt || latest.createdAt || Date.now()).getTime())
     }catch(err){
       console.error(err)
       statusMsg.textContent = 'Failed to load AOS profile'

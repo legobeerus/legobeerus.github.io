@@ -90,6 +90,31 @@
     return TAG_LABELS[String(tagId)] || String(tagId)
   }
 
+  function tagOrder(tagId){
+    const order = {
+      '1414718122971103333': 10,
+      '1414718407621873764': 20,
+      '1414718477612093571': 30,
+      '1414718528774475786': 40,
+      '1414718868966080586': 50,
+      '1414719611378864168': 60,
+      '1414731884872728709': 70,
+      '1525486629458804928': 80
+    }
+    return order[String(tagId)] || 999
+  }
+
+  function uniqueTags(tags){
+    return Array.from(new Set(toArray(tags).map(tag => String(tag)).filter(Boolean)))
+  }
+
+  function sortTags(tags){
+    return uniqueTags(tags).sort((left, right) => {
+      const diff = tagOrder(left) - tagOrder(right)
+      return diff !== 0 ? diff : tagLabel(left).localeCompare(tagLabel(right))
+    })
+  }
+
   function groupByUsername(items){
     const groups = new Map()
     toArray(items).forEach(item => {
@@ -107,6 +132,9 @@
     formatDate,
     groupByUsername,
     normalizeWarrant,
-    tagLabel
+    sortTags,
+    tagLabel,
+    tagOrder,
+    uniqueTags
   }
 })()

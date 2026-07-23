@@ -549,6 +549,16 @@ a.btn.btn-primary:visited{
   color:#ffe2a8;
   border-color:rgba(245,215,122,0.3);
 }
+.dashboard-card__badge--new{
+  background:rgba(0,175,241,0.18);
+  color:#d6f6ff;
+  border-color:rgba(0,175,241,0.34);
+}
+.dashboard-card__badge--current{
+  background:rgba(54,199,108,0.14);
+  color:#8af0ad;
+  border-color:rgba(54,199,108,0.22);
+}
 .dashboard-card__link,
 .dashboard-card:visited .dashboard-card__link,
 .dashboard-card:hover .dashboard-card__link,
@@ -608,6 +618,8 @@ a.btn.btn-primary:visited{
 
 .aos-person-card .dashboard-card__badge{background:rgba(245,215,122,0.14);color:#ffe2a8;border-color:rgba(245,215,122,0.22)}
 .aos-person-card .dashboard-card__link{color:var(--primary)}
+.aos-person-card__summary{margin:0 0 8px;font-weight:800;color:var(--fg)}
+.aos-person-card__tags{margin-top:10px}
 .aos-person-card__meta{display:grid;gap:8px;margin-top:12px;color:var(--muted);font-size:.93rem}
 .aos-person-card__meta-row{display:flex;justify-content:space-between;gap:12px}
 .aos-person-card__meta-row strong{color:var(--fg)}
@@ -671,6 +683,22 @@ a.btn.btn-primary:visited{
 }
 
 .aos-profile-note{color:var(--muted);margin:8px 0 0}
+
+.aos-controls{margin:10px 0 14px}
+.aos-search{
+  width:100%;
+  padding:12px 14px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.03);
+  color:var(--fg);
+}
+.aos-search:focus{
+  outline:none;
+  border-color:rgba(0,175,241,0.55);
+  box-shadow:0 0 0 3px rgba(0,175,241,0.14);
+}
+.aos-search-summary{margin:8px 0 0;color:var(--muted);font-size:.95rem}
 
 .history-controls{
   margin:14px 0 10px;

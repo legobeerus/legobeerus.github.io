@@ -985,6 +985,41 @@ function startApp(){
     }
   });
 
+  app.get('/api/aos/person/:username', async (req, res)=>{
+    if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
+    const access = await verifyAosRoleAccess(req.session.user.id);
+    if(!access.allowed) return res.status(access.status >= 500 ? access.status : 403).json({ error: access.status >= 500 ? 'role_check_unavailable' : 'forbidden' });
+    if(!pgPool) return res.status(500).json({ error: 'server not configured to read DB' });
+    if(!hasAosWarrantsTable) return res.status(500).json({ error: 'aos_table_missing' });
+
+    const username = String(req.params.username || '').trim();
+    if(!username) return res.status(400).json({ error: 'missing_username' });
+
+    try{
+      const usernameColumn = withAosTableColumn(['username', 'user_name'], null);
+      if(!usernameColumn) return res.status(500).json({ error: 'aos_username_column_missing' });
+
+      const q = await pgPool.query(`
+        SELECT *
+        FROM bot_active_aos
+        WHERE LOWER(${usernameColumn}) = LOWER($1)
+        LIMIT 1000
+      `, [username]);
+
+      const rows = (q.rows || []).map(normalizeAosWarrant);
+      rows.sort((a, b) => {
+        const aTime = new Date(a.activatedAt || a.createdAt || 0).getTime();
+        const bTime = new Date(b.activatedAt || b.createdAt || 0).getTime();
+        if(bTime !== aTime) return bTime - aTime;
+        return String(b.threadId || '').localeCompare(String(a.threadId || ''));
+      });
+      return res.json(rows);
+    }catch(e){
+      console.error('DB list AOS person failed', e && e.message);
+      return res.status(502).json({ error: 'db_error' });
+    }
+  });
+
   app.delete('/api/aos/:threadId', async (req, res)=>{
     if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
     if(!pgPool) return res.status(500).json({ error: 'server not configured to read DB' });
