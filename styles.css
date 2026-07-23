@@ -569,6 +569,109 @@ a.btn.btn-primary:visited{
   color:var(--muted);
 }
 
+.dashboard-card--selector .dashboard-card__badge{
+  background:rgba(0,175,241,0.14);
+  color:#bfefff;
+  border-color:rgba(0,175,241,0.24);
+}
+
+.dashboard-card__details{
+  margin-top:10px;
+  display:grid;
+  gap:8px;
+  color:var(--muted);
+  font-size:.93rem;
+}
+
+.dashboard-card__detail{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+}
+
+.dashboard-card__detail strong{
+  color:var(--fg);
+}
+
+.dashboard-card__detail span:last-child{
+  text-align:right;
+}
+
+.dashboard-card__link.is-muted{
+  color:var(--muted);
+  font-weight:600;
+}
+
+.aos-page{padding-top:24px}
+.aos-page .profile-card__banner{background:linear-gradient(135deg, rgba(0,175,241,0.2), rgba(245,215,122,0.12), rgba(234,76,76,0.14))}
+
+.aos-person-card .dashboard-card__badge{background:rgba(245,215,122,0.14);color:#ffe2a8;border-color:rgba(245,215,122,0.22)}
+.aos-person-card .dashboard-card__link{color:var(--primary)}
+.aos-person-card__meta{display:grid;gap:8px;margin-top:12px;color:var(--muted);font-size:.93rem}
+.aos-person-card__meta-row{display:flex;justify-content:space-between;gap:12px}
+.aos-person-card__meta-row strong{color:var(--fg)}
+
+.aos-warrant-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.aos-warrant-card{display:block}
+.aos-warrant-card .dashboard-card__top{align-items:flex-start}
+.aos-warrant-card__title{margin:0 0 8px;font-size:1.08rem;font-weight:800}
+.aos-warrant-card__subtitle{margin:0 0 12px;color:var(--muted);line-height:1.45}
+.aos-warrant-card__meta{display:grid;gap:8px;margin-top:12px}
+.aos-warrant-card__row{display:flex;justify-content:space-between;gap:12px;font-size:.93rem}
+.aos-warrant-card__row strong{color:var(--fg)}
+.aos-warrant-card__links{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+.aos-warrant-card__links a,
+.aos-warrant-card__links button{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:8px 11px;
+  border-radius:10px;
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.04);
+  color:var(--fg);
+  text-decoration:none;
+  font:inherit;
+  cursor:pointer;
+}
+.aos-warrant-card__links a:hover,
+.aos-warrant-card__links button:hover,
+.aos-warrant-card__links a:focus,
+.aos-warrant-card__links button:focus{
+  border-color:rgba(0,175,241,0.45);
+  box-shadow:0 0 0 3px rgba(0,175,241,0.12);
+  outline:none;
+}
+.aos-warrant-card__links .is-danger{
+  border-color:rgba(234,76,76,0.22);
+  color:#ffb0b0;
+  background:rgba(234,76,76,0.12);
+}
+
+.aos-tag-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.aos-tag{
+  display:inline-flex;
+  align-items:center;
+  padding:6px 10px;
+  border-radius:999px;
+  border:1px solid rgba(0,175,241,0.22);
+  background:rgba(0,175,241,0.12);
+  color:#bfefff;
+  font-size:.86rem;
+  font-weight:700;
+}
+
+.aos-empty{
+  padding:18px;
+  border-radius:12px;
+  border:1px dashed rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.02);
+  color:var(--muted);
+}
+
+.aos-profile-note{color:var(--muted);margin:8px 0 0}
+
 .history-controls{
   margin:14px 0 10px;
 }

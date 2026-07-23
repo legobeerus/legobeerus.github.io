@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>AgentOS - Exam History</title>
+    <title>AgentOS — Dashboard</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -23,30 +23,19 @@
       </div>
     </header>
 
-    <main class="container content history-page">
+    <main class="container content">
       <div class="dashboard-header">
-        <h1>Graded Exam History</h1>
-        <a class="btn btn-ghost" href="exams.html">Back to Dashboard</a>
-      </div>
-      <p id="statusMsg">Loading...</p>
-
-      <div class="history-controls">
-        <label for="historySearch">Search exams</label>
-        <input
-          id="historySearch"
-          class="history-search"
-          type="search"
-          placeholder="Search by candidate, exam, session ID, or date..."
-          autocomplete="off"
-        />
+        <div>
+          <h1>Dashboard</h1>
+          <p class="aos-profile-note">Choose the workspace you want to open.</p>
+        </div>
       </div>
 
-      <p id="historySummary" class="history-summary"></p>
-      <div id="historyList">Loading...</div>
+      <div id="dashboardCards" class="dashboard-grid"></div>
     </main>
 
     <script src="scripts/server-config.js"></script>
     <script src="scripts/auth.js"></script>
-    <script src="scripts/history.js"></script>
+    <script src="scripts/dashboard.js"></script>
   </body>
 </html>

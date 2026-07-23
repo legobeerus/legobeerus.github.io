@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Profile — AgentOS</title>
+  <title>AOS Profile — AgentOS</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -23,30 +23,30 @@
     </div>
   </header>
 
-  <main class="container content profile-page">
+  <main class="container content aos-page">
     <section class="profile-shell">
       <div class="profile-card">
         <div class="profile-card__banner"></div>
         <div class="profile-card__body">
-          <img id="profileAvatar" class="profile-card__avatar" alt="Profile avatar" />
+          <img id="aosProfileAvatar" class="profile-card__avatar" alt="AOS profile avatar" src="media/logo.png" />
           <div class="profile-card__identity">
-            <h1 id="profileName">Loading profile...</h1>
-            <p id="profileHandle">Fetching account details...</p>
-            <p id="profileBio" class="profile-card__bio"></p>
+            <h1 id="aosProfileName">Loading profile...</h1>
+            <p id="aosProfileHandle">Fetching AOS database details...</p>
+            <p id="aosProfileBio" class="profile-card__bio"></p>
           </div>
         </div>
-        <div id="profileRoles" class="profile-roles"></div>
+        <div id="aosProfileFacts" class="profile-roles"></div>
       </div>
 
       <div class="profile-grid">
         <section class="profile-panel">
-          <h2>Review stats</h2>
-          <div class="profile-stats" id="profileStats"></div>
+          <h2>Profile stats</h2>
+          <div class="profile-stats" id="aosProfileStats"></div>
         </section>
 
         <section class="profile-panel">
-          <h2>Recent submissions</h2>
-          <div id="recentSubmissions" class="profile-activity"></div>
+          <h2>Warrants</h2>
+          <div id="aosWarrantsList"></div>
         </section>
       </div>
     </section>
@@ -62,12 +62,13 @@
         <a href="privacy.html">Privacy Policy</a>
         <a href="terms.html">Terms of Service</a>
       </nav>
-      <p class="copyright">© <span id="year-profile"></span> AgentOS</p>
+      <p class="copyright">© <span id="year-aos-profile"></span> AgentOS</p>
     </div>
   </footer>
-  <script>document.getElementById('year-profile').textContent=new Date().getFullYear();</script>
+  <script>document.getElementById('year-aos-profile').textContent=new Date().getFullYear();</script>
   <script src="scripts/server-config.js"></script>
   <script src="scripts/auth.js"></script>
-  <script src="scripts/profile.js"></script>
+  <script src="scripts/aos-utils.js"></script>
+  <script src="scripts/aos-profile.js"></script>
 </body>
 </html>

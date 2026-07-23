@@ -19,6 +19,7 @@ const BOT_BASE_URL = process.env.BOT_BASE_URL || '';
 const BOT_API_TOKEN = process.env.BOT_API_TOKEN || process.env.DISCORD_BOT_TOKEN || '';
 const BOT_GUILD_ID = process.env.BOT_GUILD_ID || process.env.GUILD_ID || process.env.BOT_API_DEFAULT_GUILD_ID || '';
 const LOCAL_ALLOWED_ROLE_IDS = new Set(String(process.env.ALLOWED_ROLE_IDS || '').split(',').map(value => value.trim()).filter(Boolean));
+const LOCAL_AOS_ALLOWED_ROLE_IDS = new Set(String(process.env.AOS_ALLOWED_ROLE_IDS || '').split(',').map(value => value.trim()).filter(Boolean));
 const REVIEW_LOCK_WINDOW_SECONDS = Number(process.env.REVIEW_LOCK_WINDOW_SECONDS || 120);
 
 if(!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET){
@@ -44,6 +45,7 @@ let examReviewsColumns = new Set();
 let examReviewsMeta = {}; // column_name -> { is_nullable, column_default }
 let hasSubmissionEventsTable = false;
 let hasReviewLocksTable = false;
+let hasAosWarrantsTable = false;
 if(!envDatabaseUrl){
   console.warn('DATABASE_URL not set in environment; Postgres support is disabled.');
 } else {
@@ -87,6 +89,29 @@ if(!envDatabaseUrl){
         reviewer_name TEXT,
         updated_at TIMESTAMPTZ DEFAULT NOW()
       )`).catch(e=>{ console.warn('exam_review_locks table check failed', e && e.message) });
+      pgPool.query(`CREATE TABLE IF NOT EXISTS bot_active_aos (
+        thread_id TEXT PRIMARY KEY,
+        guild_id TEXT,
+        forum_channel_id TEXT,
+        thread_name TEXT,
+        url TEXT,
+        submitter TEXT,
+        username TEXT,
+        profile TEXT,
+        victims TEXT,
+        charges TEXT,
+        summary TEXT,
+        proof TEXT,
+        tags JSONB,
+        calculated_time_minutes INTEGER,
+        jail_minutes INTEGER,
+        posted_by_bot BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        activated_at TIMESTAMPTZ,
+        last_seen_at TIMESTAMPTZ,
+        raw_payload JSONB,
+        deleted_at TIMESTAMPTZ
+      )`).catch(e=>{ console.warn('bot_active_aos table check failed', e && e.message) });
 
       pgPool.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='exams_sessions') AS exists`).then(r=>{
         hasExamSessionsTable = r.rows[0] && r.rows[0].exists;
@@ -120,6 +145,10 @@ if(!envDatabaseUrl){
         hasReviewLocksTable = r.rows[0] && r.rows[0].exists;
         console.log('exam_review_locks table exists:', hasReviewLocksTable);
       }).catch(e=>{ console.warn('Failed to check exam_review_locks table existence:', e && e.message) });
+      pgPool.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='bot_active_aos') AS exists`).then(r=>{
+        hasAosWarrantsTable = r.rows[0] && r.rows[0].exists;
+        console.log('bot_active_aos table exists:', hasAosWarrantsTable);
+      }).catch(e=>{ console.warn('Failed to check bot_active_aos table existence:', e && e.message) });
     }).catch(err=>{
       console.error('Database connection failed (auth or network). Postgres features disabled. Error:', err && err.message);
       testPool.end().catch(()=>{});
@@ -206,11 +235,18 @@ function startApp(){
   }
 
   app.use(async (req, res, next)=>{
-    const protectedPages = new Set(['/exams.html', '/grade.html', '/history.html']);
-    if(!protectedPages.has(req.path)) return next();
+    const protectedPages = new Map([
+      ['/exams.html', verifyGuildRoleAccess],
+      ['/grade.html', verifyGuildRoleAccess],
+      ['/history.html', verifyGuildRoleAccess],
+      ['/aos-dashboard.html', verifyAosRoleAccess],
+      ['/aos-profile.html', verifyAosRoleAccess]
+    ]);
+    const verifyAccess = protectedPages.get(req.path);
+    if(!verifyAccess) return next();
     if(!req.session || !req.session.user) return res.redirect('/');
     try{
-      const access = await verifyGuildRoleAccess(req.session.user.id);
+      const access = await verifyAccess(req.session.user.id);
       if(access.allowed) return next();
       console.warn('Blocked protected page', req.path, 'for user', req.session.user.id, access.status, access.error || 'forbidden');
       if(access.status >= 500) return res.status(access.status).send('Role verification unavailable');
@@ -404,6 +440,68 @@ function startApp(){
     if(req.session) req.session.destroy(()=>{ res.redirect('/'); });
     else res.redirect('/');
   });
+
+  function toText(value){
+    if(value == null) return '';
+    return String(value);
+  }
+
+  function toNumber(value){
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function toBoolean(value){
+    if(typeof value === 'boolean') return value;
+    if(typeof value === 'string'){
+      const text = value.trim().toLowerCase();
+      if(text === 'true') return true;
+      if(text === 'false') return false;
+    }
+    if(typeof value === 'number') return value !== 0;
+    return null;
+  }
+
+  function parseJsonMaybe(value){
+    if(value == null) return null;
+    if(Array.isArray(value)) return value;
+    if(typeof value === 'object') return value;
+    if(typeof value !== 'string') return null;
+    const text = value.trim();
+    if(!text) return null;
+    try{ return JSON.parse(text); }catch(e){ return value; }
+  }
+
+  function normalizeAosWarrant(row){
+    const payload = parseJsonMaybe(row && row.raw_payload);
+    const source = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : row || {};
+    const tags = parseJsonMaybe(source.tags);
+    return {
+      threadId: toText(source.threadId || source.thread_id || row.thread_id || row.threadId || row.id || ''),
+      guildId: toText(source.guildId || source.guild_id || row.guild_id || ''),
+      forumChannelId: toText(source.forumChannelId || source.forum_channel_id || row.forum_channel_id || ''),
+      threadName: toText(source.threadName || source.thread_name || row.thread_name || ''),
+      url: toText(source.url || row.url || ''),
+      submitter: toText(source.submitter || row.submitter || ''),
+      username: toText(source.username || row.username || ''),
+      profile: toText(source.profile || row.profile || ''),
+      victims: toText(source.victims || row.victims || ''),
+      charges: toText(source.charges || row.charges || ''),
+      summary: toText(source.summary || row.summary || ''),
+      proof: toText(source.proof || row.proof || ''),
+      tags: Array.isArray(tags) ? tags.map(tag => toText(tag)).filter(Boolean) : [],
+      calculatedTimeMinutes: toNumber(source.calculatedTimeMinutes || source.calculated_time_minutes || row.calculated_time_minutes),
+      jailMinutes: toNumber(source.jailMinutes || source.jail_minutes || row.jail_minutes),
+      postedByBot: toBoolean(source.postedByBot ?? source.posted_by_bot ?? row.posted_by_bot),
+      createdAt: toText(source.createdAt || source.created_at || row.created_at || ''),
+      activatedAt: toText(source.activatedAt || source.activated_at || row.activated_at || ''),
+      lastSeenAt: toText(source.lastSeenAt || source.last_seen_at || row.last_seen_at || '')
+    };
+  }
+
+  async function verifyAosRoleAccess(userId){
+    return verifyGuildRoleAccess(userId, LOCAL_AOS_ALLOWED_ROLE_IDS);
+  }
 
   async function getActiveReviewLock(sessionId){
     if(!pgPool || !hasReviewLocksTable || !sessionId) return null;
@@ -821,7 +919,7 @@ function startApp(){
     return { ok: response.ok, status: response.status, payload, url };
   }
 
-  async function verifyGuildRoleAccess(userId){
+  async function verifyGuildRoleAccess(userId, allowedRoleIds = LOCAL_ALLOWED_ROLE_IDS){
     const lookup = await fetchGuildRolePayload(userId);
     if(!lookup.ok){
       return {
@@ -838,12 +936,52 @@ function startApp(){
       ? lookup.payload.allowed
       : typeof (lookup.payload && lookup.payload.isAllowed) === 'boolean'
         ? lookup.payload.isAllowed
-        : LOCAL_ALLOWED_ROLE_IDS.size
-          ? roles.some(role => LOCAL_ALLOWED_ROLE_IDS.has(role.id) || LOCAL_ALLOWED_ROLE_IDS.has(role.name))
+        : allowedRoleIds && allowedRoleIds.size
+          ? roles.some(role => allowedRoleIds.has(role.id) || allowedRoleIds.has(role.name))
           : false;
 
     return { allowed, status: allowed ? 200 : 403, roles, details: lookup.payload, url: lookup.url };
   }
+
+  app.get('/api/aos/active', async (req, res)=>{
+    if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
+    const access = await verifyAosRoleAccess(req.session.user.id);
+    if(!access.allowed) return res.status(access.status >= 500 ? access.status : 403).json({ error: access.status >= 500 ? 'role_check_unavailable' : 'forbidden' });
+    if(!pgPool) return res.status(500).json({ error: 'server not configured to read DB' });
+    if(!hasAosWarrantsTable) return res.status(500).json({ error: 'aos_table_missing' });
+    try{
+      const q = await pgPool.query(`
+        SELECT *
+        FROM bot_active_aos
+        WHERE deleted_at IS NULL
+        ORDER BY COALESCE(activated_at, created_at) DESC, thread_id DESC
+        LIMIT 1000
+      `);
+      return res.json((q.rows || []).map(normalizeAosWarrant));
+    }catch(e){
+      console.error('DB list AOS failed', e && e.message);
+      return res.status(502).json({ error: 'db_error' });
+    }
+  });
+
+  app.delete('/api/aos/:threadId', async (req, res)=>{
+    if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
+    if(!pgPool) return res.status(500).json({ error: 'server not configured to read DB' });
+    if(!hasAosWarrantsTable) return res.status(500).json({ error: 'aos_table_missing' });
+    const threadId = String(req.params.threadId || '').trim();
+    if(!threadId) return res.status(400).json({ error: 'missing_threadId' });
+    try{
+      const existing = await pgPool.query(`SELECT * FROM bot_active_aos WHERE thread_id = $1 LIMIT 1`, [threadId]);
+      if(!existing.rowCount) return res.status(404).json({ error: 'not_found' });
+      const postedByBot = normalizeAosWarrant(existing.rows[0]).postedByBot;
+      if(postedByBot !== false) return res.status(403).json({ error: 'not_deletable' });
+      const deleted = await pgPool.query(`DELETE FROM bot_active_aos WHERE thread_id = $1 RETURNING thread_id`, [threadId]);
+      return res.json({ ok: true, deleted: deleted.rowCount > 0, threadId });
+    }catch(e){
+      console.error('DB delete AOS failed', e && e.message);
+      return res.status(502).json({ error: 'db_error' });
+    }
+  });
 
   // Fetch single exam: prefer DB row, fallback to bot
   app.get('/api/exams/:id', async (req, res)=>{
