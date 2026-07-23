@@ -94,9 +94,10 @@
   function renderTags(tags){
     if(!tags || !tags.length) return ''
     const utils = U()
+    const tagClass = utils.tagClass || (() => 'aos-tag--neutral')
     return `
       <div class="aos-tag-list">
-        ${tags.map(tag => `<span class="aos-tag">${utils.tagLabel ? utils.tagLabel(tag) : tag}</span>`).join('')}
+        ${tags.map(tag => `<span class="aos-tag ${tagClass(tag)}">${utils.tagLabel ? utils.tagLabel(tag) : tag}</span>`).join('')}
       </div>
     `
   }
@@ -115,19 +116,25 @@
     return normalized.filter(item => String(item.username || '').toLowerCase() === username.toLowerCase())
   }
 
+  async function loadAllWarrants(){
+    const resp = await fetch(`${AUTH_SERVER}/api/aos/active`, { credentials: 'include' })
+    if(!resp.ok) throw new Error(`aos fetch failed (${resp.status})`)
+    const data = await resp.json()
+    return (Array.isArray(data) ? data : []).map(item => (U().normalizeWarrant ? U().normalizeWarrant(item) : item))
+  }
+
   function cardHtml(warrant){
     const utils = U()
     const dateLabel = utils.formatDate ? utils.formatDate(warrant.activatedAt || warrant.createdAt) : (warrant.activatedAt || warrant.createdAt || '')
     const lastSeen = utils.formatDate ? utils.formatDate(warrant.lastSeenAt) : warrant.lastSeenAt
-    const postedByBot = warrant.postedByBot !== false
-    const deleteButton = !postedByBot
+    const deleteButton = warrant.postedByBot === false
       ? `<button type="button" class="is-danger" data-delete-thread="${utils.escapeHtml ? utils.escapeHtml(warrant.threadId) : warrant.threadId}">Delete warrant</button>`
       : ''
     return `
       <article class="dashboard-card aos-warrant-card">
         <div class="dashboard-card__top">
-          <span class="dashboard-card__badge">${postedByBot ? 'Bot posted' : 'Manual entry'}</span>
-          <span class="dashboard-card__link ${postedByBot ? '' : 'is-muted'}">${utils.escapeHtml ? utils.escapeHtml(warrant.threadId || 'Warrant') : (warrant.threadId || 'Warrant')}</span>
+          <span class="dashboard-card__badge">Warrant</span>
+          <span class="dashboard-card__link">${utils.escapeHtml ? utils.escapeHtml(warrant.threadId || 'Warrant') : (warrant.threadId || 'Warrant')}</span>
         </div>
         <h3 class="aos-warrant-card__title">${utils.escapeHtml ? utils.escapeHtml(warrant.threadName || warrant.username || 'AOS warrant') : (warrant.threadName || warrant.username || 'AOS warrant')}</h3>
         <p class="aos-warrant-card__subtitle">${utils.escapeHtml ? utils.escapeHtml(warrant.summary || warrant.charges || 'No summary available.') : (warrant.summary || warrant.charges || 'No summary available.')}</p>
@@ -135,7 +142,6 @@
           <div class="aos-warrant-card__row"><strong>Submitter</strong><span>${utils.escapeHtml ? utils.escapeHtml(warrant.submitter || 'Unknown') : (warrant.submitter || 'Unknown')}</span></div>
           <div class="aos-warrant-card__row"><strong>Victims</strong><span>${utils.escapeHtml ? utils.escapeHtml(warrant.victims || 'Unknown') : (warrant.victims || 'Unknown')}</span></div>
           <div class="aos-warrant-card__row"><strong>Jail time</strong><span>${Number(warrant.jailMinutes || warrant.calculatedTimeMinutes || 0) || 0} minutes</span></div>
-          <div class="aos-warrant-card__row"><strong>Last seen</strong><span>${lastSeen || 'Unknown'}</span></div>
           <div class="aos-warrant-card__row"><strong>Created</strong><span>${dateLabel || 'Unknown'}</span></div>
         </div>
         ${renderTags(warrant.tags)}
@@ -192,7 +198,12 @@
     statusMsg.textContent = `Signed in as ${me.username}#${me.discriminator}. Loading warrant profile...`
 
     try{
-      const warrants = (await loadWarrantsForUsername(targetUsername))
+      const [allWarrants, personWarrants] = await Promise.all([
+        loadAllWarrants(),
+        loadWarrantsForUsername(targetUsername)
+      ])
+
+      const warrants = (personWarrants.length ? personWarrants : allWarrants.filter(item => String(item.username || '').toLowerCase() === targetUsername.toLowerCase()))
         .sort((a, b) => {
           const aTime = new Date(a.activatedAt || a.createdAt || 0).getTime()
           const bTime = new Date(b.activatedAt || b.createdAt || 0).getTime()
@@ -211,32 +222,26 @@
       }
 
       const latest = warrants[0]
-      const postedByBotCount = warrants.filter(item => item.postedByBot !== false).length
-      const manualCount = warrants.length - postedByBotCount
       const totalJail = warrants.reduce((sum, item) => sum + (Number(item.jailMinutes || item.calculatedTimeMinutes || 0) || 0), 0)
       const knownProfile = warrants.find(item => item.profile) || null
 
       profileAvatar.src = 'media/logo.png'
       profileAvatar.alt = `${targetUsername} profile icon`
       profileName.textContent = targetUsername
-      profileHandle.textContent = latest.threadName || `Active warrants for ${targetUsername}`
-      profileBio.textContent = latest.summary || latest.charges || 'Warrant profile loaded from the AOS database.'
+      profileHandle.textContent = `${allWarrants.length} people with active warrants total`
+      profileBio.textContent = ''
 
       renderFacts([
         `Username: ${targetUsername}`,
         `Warrants: ${warrants.length}`,
-        `Bot posted: ${postedByBotCount}`,
-        `Manual entries: ${manualCount}`,
-        knownProfile && knownProfile.profile ? `Profile: ${knownProfile.profile}` : 'Profile: unavailable'
+        `People total: ${allWarrants.length}`
       ])
 
       profileStats.innerHTML = ''
       profileStats.appendChild(statCard('Warrants', warrants.length))
-      profileStats.appendChild(statCard('Bot posted', postedByBotCount))
-      profileStats.appendChild(statCard('Manual entries', manualCount))
+      profileStats.appendChild(statCard('People total', allWarrants.length))
       profileStats.appendChild(statCard('Total jail time', `${totalJail} minutes`))
       profileStats.appendChild(statCard('Latest thread', latest.threadName || latest.threadId || 'Unknown'))
-      profileStats.appendChild(statCard('Last seen', U().formatDate ? U().formatDate(latest.lastSeenAt) : (latest.lastSeenAt || 'Unknown')))
 
       warrantList.innerHTML = ''
       const grid = document.createElement('div')
@@ -261,7 +266,7 @@
       statusMsg.textContent = 'Failed to load AOS profile'
       profileName.textContent = targetUsername
       profileHandle.textContent = 'Profile load failed.'
-      profileBio.textContent = 'Try refreshing the page or checking the AOS backend.'
+      profileBio.textContent = ''
       renderFacts([`Username: ${targetUsername}`])
       profileStats.innerHTML = ''
       renderEmpty('Failed to load warrant profile.')

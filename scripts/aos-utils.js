@@ -90,6 +90,20 @@
     return TAG_LABELS[String(tagId)] || String(tagId)
   }
 
+  function tagTone(tagId){
+    const tones = {
+      '1414718122971103333': 'approved',
+      '1414718407621873764': 'light',
+      '1414718477612093571': 'medium',
+      '1414718528774475786': 'heavy',
+      '1414718868966080586': 'reward',
+      '1414719611378864168': 'medal',
+      '1414731884872728709': 'limit',
+      '1525486629458804928': 'approved'
+    }
+    return tones[String(tagId)] || 'neutral'
+  }
+
   function tagOrder(tagId){
     const order = {
       '1414718122971103333': 10,
@@ -115,6 +129,10 @@
     })
   }
 
+  function tagClass(tagId){
+    return `aos-tag--${tagTone(tagId)}`
+  }
+
   function groupByUsername(items){
     const groups = new Map()
     toArray(items).forEach(item => {
@@ -133,8 +151,10 @@
     groupByUsername,
     normalizeWarrant,
     sortTags,
+    tagClass,
     tagLabel,
     tagOrder,
+    tagTone,
     uniqueTags
   }
 })()

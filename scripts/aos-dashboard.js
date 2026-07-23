@@ -111,6 +111,7 @@
     const escapeHtml = utils().escapeHtml || (value => String(value == null ? '' : value))
     const sortTags = utils().sortTags || (tags => tags)
     const tagLabel = utils().tagLabel || (tag => String(tag))
+    const tagClass = utils().tagClass || (() => 'aos-tag--neutral')
 
     const grid = document.createElement('div')
     grid.className = 'dashboard-grid'
@@ -133,7 +134,7 @@
         </div>
         <h3>${escapeHtml(formatDisplay(group.username))}</h3>
         <div class="aos-person-card__tags">
-          ${tags.length ? `<div class="aos-tag-list">${tags.map(tag => `<span class="aos-tag">${escapeHtml(tagLabel(tag))}</span>`).join('')}</div>` : ''}
+          ${tags.length ? `<div class="aos-tag-list">${tags.map(tag => `<span class="aos-tag ${tagClass(tag)}">${escapeHtml(tagLabel(tag))}</span>`).join('')}</div>` : ''}
         </div>
         <div class="aos-person-card__meta">
           <div class="aos-person-card__meta-row"><strong>Latest thread</strong><span>${escapeHtml(latest.threadName || latest.threadId || 'Unknown')}</span></div>
