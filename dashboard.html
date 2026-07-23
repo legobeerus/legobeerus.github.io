@@ -34,6 +34,21 @@
       <div id="dashboardCards" class="dashboard-grid"></div>
     </main>
 
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <div class="brand-sm">
+          <img src="media/logo.png" alt="AgentOS" />
+          <span>AgentOS</span>
+        </div>
+        <nav class="footer-links">
+          <a href="privacy.html">Privacy Policy</a>
+          <a href="terms.html">Terms of Service</a>
+        </nav>
+        <p class="copyright">© <span id="year-dashboard"></span> AgentOS</p>
+      </div>
+    </footer>
+    <script>document.getElementById('year-dashboard').textContent = new Date().getFullYear();</script>
+
     <script src="scripts/server-config.js"></script>
     <script src="scripts/auth.js"></script>
     <script src="scripts/dashboard.js"></script>
