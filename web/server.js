@@ -46,6 +46,7 @@ let examReviewsMeta = {}; // column_name -> { is_nullable, column_default }
 let hasSubmissionEventsTable = false;
 let hasReviewLocksTable = false;
 let hasAosWarrantsTable = false;
+let aosTableColumns = new Set();
 if(!envDatabaseUrl){
   console.warn('DATABASE_URL not set in environment; Postgres support is disabled.');
 } else {
@@ -149,6 +150,10 @@ if(!envDatabaseUrl){
         hasAosWarrantsTable = r.rows[0] && r.rows[0].exists;
         console.log('bot_active_aos table exists:', hasAosWarrantsTable);
       }).catch(e=>{ console.warn('Failed to check bot_active_aos table existence:', e && e.message) });
+      pgPool.query(`SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='bot_active_aos'`).then(cols=>{
+        aosTableColumns = new Set((cols.rows || []).map(row => String(row.column_name || '').trim()).filter(Boolean));
+        console.log('bot_active_aos columns:', Array.from(aosTableColumns));
+      }).catch(e=>{ console.warn('Failed to inspect bot_active_aos columns:', e && e.message) });
     }).catch(err=>{
       console.error('Database connection failed (auth or network). Postgres features disabled. Error:', err && err.message);
       testPool.end().catch(()=>{});
@@ -497,6 +502,17 @@ function startApp(){
       activatedAt: toText(source.activatedAt || source.activated_at || row.activated_at || ''),
       lastSeenAt: toText(source.lastSeenAt || source.last_seen_at || row.last_seen_at || '')
     };
+  }
+
+  function pickAosColumn(candidates){
+    for(const candidate of candidates){
+      if(aosTableColumns.has(candidate)) return candidate;
+    }
+    return null;
+  }
+
+  function withAosTableColumn(candidates, fallback){
+    return pickAosColumn(candidates) || fallback || null;
   }
 
   async function verifyAosRoleAccess(userId){
@@ -953,11 +969,16 @@ function startApp(){
       const q = await pgPool.query(`
         SELECT *
         FROM bot_active_aos
-        WHERE deleted_at IS NULL
-        ORDER BY COALESCE(activated_at, created_at) DESC, thread_id DESC
         LIMIT 1000
       `);
-      return res.json((q.rows || []).map(normalizeAosWarrant));
+      const rows = (q.rows || []).map(normalizeAosWarrant);
+      rows.sort((a, b) => {
+        const aTime = new Date(a.activatedAt || a.createdAt || 0).getTime();
+        const bTime = new Date(b.activatedAt || b.createdAt || 0).getTime();
+        if(bTime !== aTime) return bTime - aTime;
+        return String(b.threadId || '').localeCompare(String(a.threadId || ''));
+      });
+      return res.json(rows);
     }catch(e){
       console.error('DB list AOS failed', e && e.message);
       return res.status(502).json({ error: 'db_error' });
@@ -971,11 +992,13 @@ function startApp(){
     const threadId = String(req.params.threadId || '').trim();
     if(!threadId) return res.status(400).json({ error: 'missing_threadId' });
     try{
-      const existing = await pgPool.query(`SELECT * FROM bot_active_aos WHERE thread_id = $1 LIMIT 1`, [threadId]);
+      const threadColumn = withAosTableColumn(['thread_id', 'threadId', 'id'], null);
+      if(!threadColumn) return res.status(500).json({ error: 'aos_thread_column_missing' });
+      const existing = await pgPool.query(`SELECT * FROM bot_active_aos WHERE ${threadColumn} = $1 LIMIT 1`, [threadId]);
       if(!existing.rowCount) return res.status(404).json({ error: 'not_found' });
       const postedByBot = normalizeAosWarrant(existing.rows[0]).postedByBot;
       if(postedByBot !== false) return res.status(403).json({ error: 'not_deletable' });
-      const deleted = await pgPool.query(`DELETE FROM bot_active_aos WHERE thread_id = $1 RETURNING thread_id`, [threadId]);
+      const deleted = await pgPool.query(`DELETE FROM bot_active_aos WHERE ${threadColumn} = $1 RETURNING ${threadColumn}`, [threadId]);
       return res.json({ ok: true, deleted: deleted.rowCount > 0, threadId });
     }catch(e){
       console.error('DB delete AOS failed', e && e.message);
