@@ -620,8 +620,9 @@ a.btn.btn-primary:visited{
 
 .aos-person-card .dashboard-card__badge{background:rgba(245,215,122,0.14);color:#ffe2a8;border-color:rgba(245,215,122,0.22)}
 .aos-person-card .dashboard-card__link{color:var(--primary)}
+.aos-person-card{padding:18px 18px 16px}
 .aos-person-card__tags{margin-top:10px}
-.aos-person-card__meta{display:grid;gap:10px;margin-top:14px;color:var(--muted);font-size:.93rem}
+.aos-person-card__meta{display:grid;gap:8px;margin-top:10px;color:var(--muted);font-size:.93rem}
 .aos-person-card__meta-row{display:flex;justify-content:space-between;gap:12px}
 .aos-person-card__meta-row strong{color:var(--fg)}
 

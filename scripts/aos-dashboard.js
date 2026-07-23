@@ -124,7 +124,6 @@
         return bTime - aTime
       })
       const latest = warrants[0] || {}
-      const tags = sortTags(warrants.flatMap(warrant => warrant.tags || []))
       const card = document.createElement('a')
       card.className = 'dashboard-card aos-person-card'
       card.href = `aos-profile.html?username=${encodeURIComponent(group.username)}`
@@ -134,9 +133,6 @@
           <span class="dashboard-card__link">Open profile</span>
         </div>
         <h3>${escapeHtml(formatDisplay(group.username))}</h3>
-        <div class="aos-person-card__tags">
-          ${tags.length ? `<div class="aos-tag-list">${tags.map(tag => `<span class="aos-tag ${tagClass(tag)}">${escapeHtml(tagLabel(tag))}</span>`).join('')}</div>` : ''}
-        </div>
         <div class="aos-person-card__meta">
           <div class="aos-person-card__meta-row"><strong>Latest thread</strong><span>${escapeHtml(latest.threadName || latest.threadId || 'Unknown')}</span></div>
           <div class="aos-person-card__meta-row"><strong>Latest charge</strong><span>${escapeHtml(latest.charges || 'Unknown')}</span></div>
