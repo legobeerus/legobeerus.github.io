@@ -212,8 +212,8 @@
 
       if(!warrants.length){
         profileName.textContent = targetUsername
-        profileHandle.textContent = 'No warrants found for this username.'
-        profileBio.textContent = 'The selected profile does not currently have any active warrants.'
+        profileHandle.textContent = ''
+        profileBio.textContent = ''
         renderFacts([`Username: ${targetUsername}`, 'Warrants: 0'])
         profileStats.innerHTML = ''
         renderEmpty('No active warrants found for this person.')
@@ -228,18 +228,16 @@
       profileAvatar.src = 'media/logo.png'
       profileAvatar.alt = `${targetUsername} profile icon`
       profileName.textContent = targetUsername
-      profileHandle.textContent = `${allWarrants.length} people with active warrants total`
+      profileHandle.textContent = ''
       profileBio.textContent = ''
 
       renderFacts([
         `Username: ${targetUsername}`,
-        `Warrants: ${warrants.length}`,
-        `People total: ${allWarrants.length}`
+        `Warrants: ${warrants.length}`
       ])
 
       profileStats.innerHTML = ''
       profileStats.appendChild(statCard('Warrants', warrants.length))
-      profileStats.appendChild(statCard('People total', allWarrants.length))
       profileStats.appendChild(statCard('Total jail time', `${totalJail} minutes`))
       profileStats.appendChild(statCard('Latest thread', latest.threadName || latest.threadId || 'Unknown'))
 
@@ -265,7 +263,7 @@
       console.error(err)
       statusMsg.textContent = 'Failed to load AOS profile'
       profileName.textContent = targetUsername
-      profileHandle.textContent = 'Profile load failed.'
+      profileHandle.textContent = ''
       profileBio.textContent = ''
       renderFacts([`Username: ${targetUsername}`])
       profileStats.innerHTML = ''

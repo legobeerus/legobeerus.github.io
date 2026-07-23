@@ -1,6 +1,7 @@
 (function(){
   const AUTH_SERVER = (window && window.__AUTH_SERVER__) || window.location.origin
   const statusMsg = document.getElementById('statusMsg')
+  const aosSummary = document.getElementById('aosSummary')
   const dashboardList = document.getElementById('aosDashboardList')
   const searchInput = document.getElementById('aosSearch')
   const searchSummary = document.getElementById('aosSearchSummary')
@@ -185,6 +186,7 @@
 
       allGroups = groups
       statusMsg.textContent = `Signed in as ${me.username}#${me.discriminator}. Approved to view: Office of Special Investigations.`
+      if(aosSummary) aosSummary.textContent = `${groups.length} people with active warrants total.`
       applySearch()
 
       const latestTime = groups.reduce((max, group) => Math.max(max, latestGroupTime(group)), 0)
@@ -192,6 +194,7 @@
     }catch(err){
       console.error(err)
       statusMsg.textContent = 'Failed to load AOS data'
+      if(aosSummary) aosSummary.textContent = ''
       renderEmpty('Failed to load warrants.')
     }
   }
