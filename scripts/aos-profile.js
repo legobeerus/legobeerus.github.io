@@ -18,6 +18,14 @@
     return new URLSearchParams(window.location.search).get('username') || ''
   }
 
+  function onReady(fn){
+    if(document.readyState === 'loading'){
+      document.addEventListener('DOMContentLoaded', fn, { once: true })
+    }else{
+      fn()
+    }
+  }
+
   function readSeenAt(){
     try{
       const raw = localStorage.getItem(STORAGE_KEY)
@@ -95,7 +103,10 @@
 
   async function loadWarrantsForUsername(username){
     const personResp = await fetch(`${AUTH_SERVER}/api/aos/person/${encodeURIComponent(username)}`, { credentials: 'include' })
-    if(personResp.ok) return await personResp.json()
+    if(personResp.ok){
+      const data = await personResp.json()
+      return Array.isArray(data) ? data : []
+    }
 
     const fallbackResp = await fetch(`${AUTH_SERVER}/api/aos/active`, { credentials: 'include' })
     if(!fallbackResp.ok) throw new Error(`aos fetch failed (${fallbackResp.status})`)
@@ -181,34 +192,12 @@
     statusMsg.textContent = `Signed in as ${me.username}#${me.discriminator}. Loading warrant profile...`
 
     try{
-      const response = await fetch(`${AUTH_SERVER}/api/aos/person/${encodeURIComponent(targetUsername)}`, { credentials: 'include' })
-      if(response.status === 403){
-        statusMsg.textContent = 'Access denied: your Discord account is missing the required AOS role.'
-        profileName.textContent = 'Access denied'
-        profileHandle.textContent = 'Your Discord account is missing the required AOS role.'
-        profileBio.textContent = 'This profile is locked.'
-        renderFacts([])
-        profileStats.innerHTML = ''
-        renderEmpty('Access denied.')
-        return
-      }
-      const data = response.ok ? await response.json() : await loadWarrantsForUsername(targetUsername)
-      const warrants = (Array.isArray(data) ? data : []).map(item => (U().normalizeWarrant ? U().normalizeWarrant(item) : item))
+      const warrants = (await loadWarrantsForUsername(targetUsername))
         .sort((a, b) => {
           const aTime = new Date(a.activatedAt || a.createdAt || 0).getTime()
           const bTime = new Date(b.activatedAt || b.createdAt || 0).getTime()
           return bTime - aTime
         })
-
-      if(response.ok && !warrants.length){
-        // If the dedicated endpoint is empty, one fallback pass keeps the page from appearing stuck.
-        const fallbackWarrants = await loadWarrantsForUsername(targetUsername)
-        warrants.push(...fallbackWarrants.sort((a, b) => {
-          const aTime = new Date(a.activatedAt || a.createdAt || 0).getTime()
-          const bTime = new Date(b.activatedAt || b.createdAt || 0).getTime()
-          return bTime - aTime
-        }))
-      }
 
       if(!warrants.length){
         profileName.textContent = targetUsername
@@ -270,9 +259,14 @@
     }catch(err){
       console.error(err)
       statusMsg.textContent = 'Failed to load AOS profile'
+      profileName.textContent = targetUsername
+      profileHandle.textContent = 'Profile load failed.'
+      profileBio.textContent = 'Try refreshing the page or checking the AOS backend.'
+      renderFacts([`Username: ${targetUsername}`])
+      profileStats.innerHTML = ''
       renderEmpty('Failed to load warrant profile.')
     }
   }
 
-  document.addEventListener('DOMContentLoaded', loadProfile)
+  onReady(loadProfile)
 })()

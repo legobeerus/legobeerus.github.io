@@ -104,7 +104,7 @@
     dashboardList.innerHTML = ''
     if(!groups.length){
       renderEmpty(queryText ? `No active warrants matched "${queryText}".` : 'No active warrants were found.')
-      if(searchSummary) searchSummary.textContent = queryText ? `0 matching person${0 === 1 ? '' : 's'}.` : '0 people with active warrants.'
+      if(searchSummary) searchSummary.textContent = queryText ? `0 matching person${0 === 1 ? '' : 's'}.` : ''
       return
     }
 
@@ -123,7 +123,6 @@
       })
       const latest = warrants[0] || {}
       const tags = sortTags(warrants.flatMap(warrant => warrant.tags || []))
-      const latestTime = latestGroupTime(group)
       const card = document.createElement('a')
       card.className = 'dashboard-card aos-person-card'
       card.href = `aos-profile.html?username=${encodeURIComponent(group.username)}`
@@ -133,9 +132,8 @@
           <span class="dashboard-card__link">Open profile</span>
         </div>
         <h3>${escapeHtml(formatDisplay(group.username))}</h3>
-        <p class="aos-person-card__summary">${escapeHtml(`${warrants.length} Warrant${warrants.length === 1 ? '' : 's'}`)}</p>
         <div class="aos-person-card__tags">
-          ${tags.length ? `<div class="aos-tag-list">${tags.map(tag => `<span class="aos-tag">${escapeHtml(tagLabel(tag))}</span>`).join('')}</div>` : '<div class="aos-empty">No tags recorded.</div>'}
+          ${tags.length ? `<div class="aos-tag-list">${tags.map(tag => `<span class="aos-tag">${escapeHtml(tagLabel(tag))}</span>`).join('')}</div>` : ''}
         </div>
         <div class="aos-person-card__meta">
           <div class="aos-person-card__meta-row"><strong>Latest thread</strong><span>${escapeHtml(latest.threadName || latest.threadId || 'Unknown')}</span></div>
@@ -147,7 +145,7 @@
     })
 
     dashboardList.appendChild(grid)
-    if(searchSummary) searchSummary.textContent = `${groups.length} person${groups.length === 1 ? '' : 's'} with active warrants.`
+    if(searchSummary) searchSummary.textContent = queryText ? `${groups.length} person${groups.length === 1 ? '' : 's'} match your search.` : ''
   }
 
   function applySearch(){
@@ -185,7 +183,7 @@
         .sort((a, b) => b.warrants.length - a.warrants.length)
 
       allGroups = groups
-      statusMsg.textContent = `Signed in as ${me.username}#${me.discriminator}. ${groups.length} person${groups.length === 1 ? '' : 's'} with active warrants.`
+      statusMsg.textContent = `Signed in as ${me.username}#${me.discriminator}. Approved to view: Office of Special Investigations.`
       applySearch()
 
       const latestTime = groups.reduce((max, group) => Math.max(max, latestGroupTime(group)), 0)

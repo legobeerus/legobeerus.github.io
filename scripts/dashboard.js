@@ -61,10 +61,9 @@
         <span class="dashboard-card__link">Open</span>
       </div>
       <h3>Exam Dashboard</h3>
-      <p>${escapeHtml(examCard.summary)}</p>
       <div class="dashboard-card__details">
         <div class="dashboard-card__detail"><strong>Active</strong><span>${escapeHtml(examCard.activeCount)} exam${examCard.activeCount === 1 ? '' : 's'}</span></div>
-        <div class="dashboard-card__detail"><strong>Latest update</strong><span>${escapeHtml(examCard.latestLabel)}</span></div>
+        <div class="dashboard-card__detail"><strong>Approved to view</strong><span>${escapeHtml(examCard.approvedLabel)}</span></div>
       </div>
     </a>
     <a class="dashboard-card dashboard-card--selector" href="aos-dashboard.html">
@@ -73,10 +72,9 @@
         <span class="dashboard-card__link">Open</span>
       </div>
       <h3>AOS Dashboard</h3>
-      <p>${escapeHtml(aosCard.summary)}</p>
       <div class="dashboard-card__details">
         <div class="dashboard-card__detail"><strong>Active</strong><span>${escapeHtml(aosCard.activeCount)} person${aosCard.activeCount === 1 ? '' : 's'}</span></div>
-        <div class="dashboard-card__detail"><strong>Latest update</strong><span>${escapeHtml(aosCard.latestLabel)}</span></div>
+        <div class="dashboard-card__detail"><strong>Approved to view</strong><span>${escapeHtml(aosCard.approvedLabel)}</span></div>
       </div>
     </a>
   `)
@@ -117,14 +115,14 @@
       unread: examLatest > examSeenAt,
       activeCount: activeExams.length,
       latestLabel: examLatest ? new Date(examLatest).toLocaleString() : 'No active exams',
-      summary: activeExams.length ? 'Review active exams and continue the existing workflow.' : 'No active exams are waiting right now.'
+      approvedLabel: 'Department of Administration or OSI Command'
     }
 
     const aosCard = {
       unread: aosLatest > aosSeenAt,
       activeCount: activeAos.length,
       latestLabel: aosLatest ? new Date(aosLatest).toLocaleString() : 'No active warrants',
-      summary: activeAos.length ? 'Browse active arrest-on-sight warrants by person.' : 'No active warrants are waiting right now.'
+      approvedLabel: 'Office of Special Investigations'
     }
 
     renderCards(examCard, aosCard)
@@ -134,21 +132,19 @@
     <a class="dashboard-card dashboard-card--selector" href="exams.html">
       <div class="dashboard-card__top"><span class="dashboard-card__badge">CURRENT</span><span class="dashboard-card__link">Open</span></div>
       <h3>Exam Dashboard</h3>
-      <p>Review active exams and continue the existing workflow.</p>
-      <div class="dashboard-card__details"><div class="dashboard-card__detail"><strong>Active</strong><span>Loading...</span></div><div class="dashboard-card__detail"><strong>Latest update</strong><span>Loading...</span></div></div>
+      <div class="dashboard-card__details"><div class="dashboard-card__detail"><strong>Active</strong><span>Loading...</span></div><div class="dashboard-card__detail"><strong>Approved to view</strong><span>Loading...</span></div></div>
     </a>
     <a class="dashboard-card dashboard-card--selector" href="aos-dashboard.html">
       <div class="dashboard-card__top"><span class="dashboard-card__badge">CURRENT</span><span class="dashboard-card__link">Open</span></div>
       <h3>AOS Dashboard</h3>
-      <p>Browse active arrest-on-sight warrants by person.</p>
-      <div class="dashboard-card__details"><div class="dashboard-card__detail"><strong>Active</strong><span>Loading...</span></div><div class="dashboard-card__detail"><strong>Latest update</strong><span>Loading...</span></div></div>
+      <div class="dashboard-card__details"><div class="dashboard-card__detail"><strong>Active</strong><span>Loading...</span></div><div class="dashboard-card__detail"><strong>Approved to view</strong><span>Loading...</span></div></div>
     </a>
   `)
 
   loadCardData().catch(()=>{
     renderCards(
-      { unread: false, activeCount: 0, latestLabel: 'Unavailable', summary: 'Review active exams and continue the existing workflow.' },
-      { unread: false, activeCount: 0, latestLabel: 'Unavailable', summary: 'Browse active arrest-on-sight warrants by person.' }
+      { unread: false, activeCount: 0, latestLabel: 'Unavailable', approvedLabel: 'Department of Administration or OSI Command' },
+      { unread: false, activeCount: 0, latestLabel: 'Unavailable', approvedLabel: 'Office of Special Investigations' }
     )
   })
 })()
