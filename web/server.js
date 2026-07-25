@@ -1062,13 +1062,16 @@ function startApp(){
     const threadId = String(req.params.threadId || '').trim();
     if(!threadId) return res.status(400).json({ error: 'missing_threadId' });
 
+    const username = String((req.body && req.body.username) || '').trim();
     const charges = String((req.body && req.body.charges) || '').trim();
     const jailMinutes = Number(req.body && req.body.jailMinutes);
+    if(!username) return res.status(400).json({ error: 'missing_username' });
     if(!charges) return res.status(400).json({ error: 'missing_charges' });
     if(!Number.isFinite(jailMinutes) || jailMinutes < 0) return res.status(400).json({ error: 'invalid_jailMinutes' });
 
     try{
       const threadColumn = withAosTableColumn(['thread_id', 'threadId', 'id'], null);
+      const usernameColumn = withAosTableColumn(['username', 'user_name'], null);
       const chargesColumn = withAosTableColumn(['charges'], null);
       const jailColumn = withAosTableColumn(['jail_minutes', 'jailMinutes'], null);
       const calculatedColumn = withAosTableColumn(['calculated_time_minutes', 'calculatedTimeMinutes'], null);
@@ -1076,11 +1079,14 @@ function startApp(){
       const lastSeenColumn = withAosTableColumn(['last_seen_at', 'lastSeenAt'], null);
 
       if(!threadColumn) return res.status(500).json({ error: 'aos_thread_column_missing' });
-      if(!chargesColumn || !jailColumn) return res.status(500).json({ error: 'aos_edit_columns_missing' });
+      if(!usernameColumn || !chargesColumn || !jailColumn) return res.status(500).json({ error: 'aos_edit_columns_missing' });
 
       let paramIndex = 1;
       const values = [];
       const sets = [];
+
+      values.push(username);
+      sets.push(`${usernameColumn} = $${paramIndex++}`);
 
       values.push(charges);
       sets.push(`${chargesColumn} = $${paramIndex++}`);
@@ -1095,12 +1101,16 @@ function startApp(){
       }
 
       if(rawPayloadColumn){
+        values.push(username);
+        const payloadUsernameParam = `$${paramIndex++}`;
         values.push(charges);
         const payloadChargesParam = `$${paramIndex++}`;
         values.push(jailRounded);
         const payloadJailParam = `$${paramIndex++}`;
         sets.push(
           `${rawPayloadColumn} = COALESCE(${rawPayloadColumn}, '{}'::jsonb) || jsonb_build_object(` +
+          `'username', ${payloadUsernameParam}::text, ` +
+          `'user_name', ${payloadUsernameParam}::text, ` +
           `'charges', ${payloadChargesParam}::text, ` +
           `'jailMinutes', ${payloadJailParam}::int, ` +
           `'jail_minutes', ${payloadJailParam}::int, ` +

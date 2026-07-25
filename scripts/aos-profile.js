@@ -12,6 +12,7 @@
   const STORAGE_KEY = 'agentos.dashboard.seen.aos'
   let canEditCharges = false
   let editModal = null
+  let editModalUsernameInput = null
   let editModalChargesInput = null
   let editModalJailInput = null
   let editModalSaveButton = null
@@ -151,7 +152,11 @@
     editModal.innerHTML = `
       <div class="aos-edit-modal__backdrop" data-edit-modal-close></div>
       <div class="aos-edit-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="aosEditModalTitle">
-        <h3 id="aosEditModalTitle">Edit Charges</h3>
+        <h3 id="aosEditModalTitle">Edit Warrant</h3>
+        <label>
+          Username
+          <input type="text" data-modal-edit-username autocomplete="off" />
+        </label>
         <label>
           Charges
           <input type="text" data-modal-edit-charges autocomplete="off" />
@@ -169,6 +174,7 @@
 
     document.body.appendChild(editModal)
 
+  editModalUsernameInput = editModal.querySelector('[data-modal-edit-username]')
     editModalChargesInput = editModal.querySelector('[data-modal-edit-charges]')
     editModalJailInput = editModal.querySelector('[data-modal-edit-jail]')
     editModalSaveButton = editModal.querySelector('[data-modal-save-edit]')
@@ -183,15 +189,20 @@
 
     editModalSaveButton.addEventListener('click', async () => {
       if(!editingWarrant) return
-      const ok = await saveEditedCharges(
+      const result = await saveEditedWarrant(
         editingWarrant.threadId,
+        editModalUsernameInput ? editModalUsernameInput.value : '',
         editModalChargesInput ? editModalChargesInput.value : '',
         editModalJailInput ? editModalJailInput.value : ''
       )
-      if(ok){
+      if(result && result.ok){
         closeEditModal()
         if(editingMe){
           statusMsg.textContent = `Signed in as ${editingMe.username}#${editingMe.discriminator}. Changes saved.`
+        }
+        if(result.usernameChanged && result.newUsername){
+          window.location.href = `aos-profile.html?username=${encodeURIComponent(result.newUsername)}`
+          return
         }
         await loadProfile()
       }
@@ -210,7 +221,10 @@
     editingMe = me
 
     if(editModalTitle){
-      editModalTitle.textContent = `Edit Charges - ${String(warrant.username || 'Unknown').trim() || 'Unknown'}`
+      editModalTitle.textContent = `Edit Warrant - ${String(warrant.username || 'Unknown').trim() || 'Unknown'}`
+    }
+    if(editModalUsernameInput){
+      editModalUsernameInput.value = String(warrant.username || '')
     }
     if(editModalChargesInput){
       editModalChargesInput.value = String(warrant.charges || '')
@@ -221,7 +235,7 @@
 
     editModal.hidden = false
     document.body.classList.add('aos-modal-open')
-    if(editModalChargesInput) editModalChargesInput.focus()
+    if(editModalUsernameInput) editModalUsernameInput.focus()
   }
 
   function renderEmpty(message){
@@ -285,7 +299,7 @@
     const escapedThread = utils.escapeHtml ? utils.escapeHtml(warrant.threadId || '') : (warrant.threadId || '')
     const editableControls = canEditCharges
       ? `
-          <button type="button" data-open-edit="${escapedThread}">Edit Charges</button>
+          <button type="button" data-open-edit="${escapedThread}">Edit Warrant</button>
         `
       : ''
     return `
@@ -314,16 +328,22 @@
     `
   }
 
-  async function saveEditedCharges(threadId, chargesValue, jailValue){
+  async function saveEditedWarrant(threadId, usernameValue, chargesValue, jailValue){
+    const username = String(usernameValue || '').trim()
+    if(!username){
+      statusMsg.textContent = 'Edit failed: username cannot be empty.'
+      return { ok: false }
+    }
+
     const jailMinutes = Number(String(jailValue || '').trim())
     if(!Number.isFinite(jailMinutes) || jailMinutes < 0){
       statusMsg.textContent = 'Edit failed: jail time must be a non-negative number of minutes.'
-      return false
+      return { ok: false }
     }
     const charges = String(chargesValue || '').trim()
     if(!charges){
       statusMsg.textContent = 'Edit failed: charges cannot be empty.'
-      return false
+      return { ok: false }
     }
 
     try{
@@ -331,21 +351,28 @@
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ charges, jailMinutes })
+        body: JSON.stringify({ username, charges, jailMinutes })
       })
       if(resp.status === 401 || resp.status === 403){
-        statusMsg.textContent = 'Edit failed: you are not authorized to edit charges.'
-        return false
+        statusMsg.textContent = 'Edit failed: you are not authorized to edit warrants.'
+        return { ok: false }
       }
       if(!resp.ok){
         statusMsg.textContent = `Edit failed (${resp.status}).`
-        return false
+        return { ok: false }
       }
-      return true
+      const data = await resp.json().catch(() => ({}))
+      const updatedUsername = String(data && data.warrant && data.warrant.username || '').trim()
+      const previousUsername = String(editingWarrant && editingWarrant.username || '').trim()
+      return {
+        ok: true,
+        newUsername: updatedUsername || username,
+        usernameChanged: Boolean((updatedUsername || username) && previousUsername && (updatedUsername || username).toLowerCase() !== previousUsername.toLowerCase())
+      }
     }catch(err){
       console.error(err)
       statusMsg.textContent = 'Edit failed due to a network or server error.'
-      return false
+      return { ok: false }
     }
   }
 
