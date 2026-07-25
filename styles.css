@@ -634,6 +634,7 @@ a.btn.btn-primary:visited{
 .aos-warrant-card__meta{display:grid;gap:10px;margin-top:14px}
 .aos-warrant-card__row{display:flex;justify-content:space-between;gap:12px;font-size:.93rem}
 .aos-warrant-card__row strong{color:var(--fg)}
+.aos-warrant-card__row--charges{align-items:flex-start}
 .aos-warrant-card__links{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
 .aos-warrant-card__links a,
 .aos-warrant-card__links button{
@@ -667,6 +668,54 @@ a.btn.btn-primary:visited{
   border-color:rgba(234,76,76,0.45);
   box-shadow:0 0 0 3px rgba(234,76,76,0.14);
   background:rgba(234,76,76,0.16);
+}
+
+.aos-charge-inline{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;max-width:72%}
+.aos-charge-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:5px 9px;
+  border-radius:999px;
+  background:rgba(0,175,241,0.12);
+  border:1px solid rgba(0,175,241,0.2);
+  color:#d6f6ff;
+  font-size:.82rem;
+}
+
+.aos-edit-fields{
+  width:100%;
+  margin-top:8px;
+  padding:11px;
+  border-radius:11px;
+  border:1px solid rgba(255,255,255,0.1);
+  background:rgba(0,0,0,0.28);
+  display:grid;
+  gap:10px;
+}
+.aos-edit-fields label{
+  display:grid;
+  gap:6px;
+  color:var(--muted);
+  font-size:.84rem;
+}
+.aos-edit-fields input{
+  width:100%;
+  padding:9px 10px;
+  border-radius:9px;
+  border:1px solid rgba(255,255,255,0.14);
+  background:rgba(255,255,255,0.04);
+  color:var(--fg);
+}
+.aos-edit-fields input:focus{
+  outline:none;
+  border-color:rgba(0,175,241,0.45);
+  box-shadow:0 0 0 3px rgba(0,175,241,0.14);
+}
+.aos-edit-fields__actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
 }
 
 .aos-tag-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
@@ -779,6 +828,21 @@ a.btn.btn-primary:visited{
 .profile-stat{padding:16px;border-radius:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05)}
 .profile-stat__label{font-size:.85rem;color:var(--muted);margin-bottom:6px}
 .profile-stat__value{font-size:1.05rem;font-weight:800;color:var(--fg)}
+.aos-charge-summary{margin-top:18px}
+.aos-charge-summary h3{margin:0 0 10px;color:var(--fg);font-size:1.02rem}
+.aos-charge-totals{display:grid;gap:10px}
+.aos-charge-total-row{
+  display:flex;
+  justify-content:space-between;
+  gap:14px;
+  align-items:center;
+  padding:12px;
+  border-radius:10px;
+  border:1px solid rgba(255,255,255,0.08);
+  background:rgba(255,255,255,0.025);
+}
+.aos-charge-total-row span{color:#bfefff;font-weight:700}
+.aos-charge-total-row strong{color:var(--fg);font-weight:700;text-align:right}
 .profile-activity{display:grid;gap:10px}
 .profile-activity__item{
   display:flex;align-items:center;justify-content:space-between;gap:14px;

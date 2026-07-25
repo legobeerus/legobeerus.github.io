@@ -20,6 +20,7 @@ const BOT_API_TOKEN = process.env.BOT_API_TOKEN || process.env.DISCORD_BOT_TOKEN
 const BOT_GUILD_ID = process.env.BOT_GUILD_ID || process.env.GUILD_ID || process.env.BOT_API_DEFAULT_GUILD_ID || '';
 const LOCAL_ALLOWED_ROLE_IDS = new Set(String(process.env.ALLOWED_ROLE_IDS || '').split(',').map(value => value.trim()).filter(Boolean));
 const LOCAL_AOS_ALLOWED_ROLE_IDS = new Set(String(process.env.AOS_ALLOWED_ROLE_IDS || '').split(',').map(value => value.trim()).filter(Boolean));
+const LOCAL_AOS_EDIT_ROLE_IDS = new Set(String(process.env.AOS_EDIT_ROLE_IDS || '').split(',').map(value => value.trim()).filter(Boolean));
 const REVIEW_LOCK_WINDOW_SECONDS = Number(process.env.REVIEW_LOCK_WINDOW_SECONDS || 120);
 
 if(!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET){
@@ -519,6 +520,30 @@ function startApp(){
     return verifyGuildRoleAccess(userId, LOCAL_AOS_ALLOWED_ROLE_IDS);
   }
 
+  async function verifyGuildRoleIdsAccess(userId, allowedRoleIds){
+    const lookup = await fetchGuildRolePayload(userId);
+    if(!lookup.ok){
+      return {
+        allowed: false,
+        status: lookup.status === 401 || lookup.status === 403 ? 403 : 502,
+        error: 'bot_role_lookup_failed',
+        details: lookup.payload,
+        url: lookup.url
+      };
+    }
+
+    const roles = roleEntriesFromPayload(lookup.payload);
+    const allowed = allowedRoleIds && allowedRoleIds.size
+      ? roles.some(role => allowedRoleIds.has(role.id) || allowedRoleIds.has(role.name))
+      : false;
+
+    return { allowed, status: allowed ? 200 : 403, roles, details: lookup.payload, url: lookup.url };
+  }
+
+  async function verifyAosEditRoleAccess(userId){
+    return verifyGuildRoleIdsAccess(userId, LOCAL_AOS_EDIT_ROLE_IDS);
+  }
+
   async function getActiveReviewLock(sessionId){
     if(!pgPool || !hasReviewLocksTable || !sessionId) return null;
     try{
@@ -1016,6 +1041,92 @@ function startApp(){
       return res.json(rows);
     }catch(e){
       console.error('DB list AOS person failed', e && e.message);
+      return res.status(502).json({ error: 'db_error' });
+    }
+  });
+
+  app.get('/api/aos/edit-access', async (req, res)=>{
+    if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
+    const access = await verifyAosEditRoleAccess(req.session.user.id);
+    if(access.status >= 500) return res.status(access.status).json({ error: 'role_check_unavailable', allowed: false });
+    return res.json({ allowed: Boolean(access.allowed) });
+  });
+
+  app.patch('/api/aos/:threadId/charges', async (req, res)=>{
+    if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
+    const access = await verifyAosEditRoleAccess(req.session.user.id);
+    if(!access.allowed) return res.status(access.status >= 500 ? access.status : 403).json({ error: access.status >= 500 ? 'role_check_unavailable' : 'forbidden' });
+    if(!pgPool) return res.status(500).json({ error: 'server not configured to read DB' });
+    if(!hasAosWarrantsTable) return res.status(500).json({ error: 'aos_table_missing' });
+
+    const threadId = String(req.params.threadId || '').trim();
+    if(!threadId) return res.status(400).json({ error: 'missing_threadId' });
+
+    const charges = String((req.body && req.body.charges) || '').trim();
+    const jailMinutes = Number(req.body && req.body.jailMinutes);
+    if(!charges) return res.status(400).json({ error: 'missing_charges' });
+    if(!Number.isFinite(jailMinutes) || jailMinutes < 0) return res.status(400).json({ error: 'invalid_jailMinutes' });
+
+    try{
+      const threadColumn = withAosTableColumn(['thread_id', 'threadId', 'id'], null);
+      const chargesColumn = withAosTableColumn(['charges'], null);
+      const jailColumn = withAosTableColumn(['jail_minutes', 'jailMinutes'], null);
+      const calculatedColumn = withAosTableColumn(['calculated_time_minutes', 'calculatedTimeMinutes'], null);
+      const rawPayloadColumn = withAosTableColumn(['raw_payload', 'rawPayload'], null);
+      const lastSeenColumn = withAosTableColumn(['last_seen_at', 'lastSeenAt'], null);
+
+      if(!threadColumn) return res.status(500).json({ error: 'aos_thread_column_missing' });
+      if(!chargesColumn || !jailColumn) return res.status(500).json({ error: 'aos_edit_columns_missing' });
+
+      let paramIndex = 1;
+      const values = [];
+      const sets = [];
+
+      values.push(charges);
+      sets.push(`${chargesColumn} = $${paramIndex++}`);
+
+      const jailRounded = Math.round(jailMinutes);
+      values.push(jailRounded);
+      sets.push(`${jailColumn} = $${paramIndex++}`);
+
+      if(calculatedColumn){
+        values.push(jailRounded);
+        sets.push(`${calculatedColumn} = $${paramIndex++}`);
+      }
+
+      if(rawPayloadColumn){
+        values.push(charges);
+        const payloadChargesParam = `$${paramIndex++}`;
+        values.push(jailRounded);
+        const payloadJailParam = `$${paramIndex++}`;
+        sets.push(
+          `${rawPayloadColumn} = COALESCE(${rawPayloadColumn}, '{}'::jsonb) || jsonb_build_object(` +
+          `'charges', ${payloadChargesParam}::text, ` +
+          `'jailMinutes', ${payloadJailParam}::int, ` +
+          `'jail_minutes', ${payloadJailParam}::int, ` +
+          `'calculatedTimeMinutes', ${payloadJailParam}::int, ` +
+          `'calculated_time_minutes', ${payloadJailParam}::int)`
+        );
+      }
+
+      if(lastSeenColumn){
+        sets.push(`${lastSeenColumn} = NOW()`);
+      }
+
+      values.push(threadId);
+      const whereParam = `$${paramIndex}`;
+
+      const updated = await pgPool.query(`
+        UPDATE bot_active_aos
+        SET ${sets.join(', ')}
+        WHERE ${threadColumn} = ${whereParam}
+        RETURNING *
+      `, values);
+
+      if(!updated.rowCount) return res.status(404).json({ error: 'not_found' });
+      return res.json({ ok: true, warrant: normalizeAosWarrant(updated.rows[0]) });
+    }catch(e){
+      console.error('DB update AOS charges failed', e && e.message);
       return res.status(502).json({ error: 'db_error' });
     }
   });

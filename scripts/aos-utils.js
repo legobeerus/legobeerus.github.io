@@ -10,6 +10,10 @@
     '1525486629458804928': 'Approved'
   }
 
+  let chargeCatalog = {}
+  let chargeCatalogLoaded = false
+  let chargeCatalogPromise = null
+
   function escapeHtml(value){
     return String(value == null ? '' : value)
       .replace(/&/g, '&amp;')
@@ -86,6 +90,156 @@
     }
   }
 
+  function normalizeChargeCode(value){
+    return String(value || '').trim().replace(/^\[/, '').replace(/\]$/, '').toLowerCase()
+  }
+
+  function titleCaseWords(value){
+    const text = String(value || '').trim()
+    if(!text) return ''
+    return text
+      .split(/\s+/)
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ')
+  }
+
+  function normalizeChargeCatalog(raw){
+    const normalized = {}
+    if(Array.isArray(raw)){
+      raw.forEach(item => {
+        if(!item || typeof item !== 'object') return
+        const key = normalizeChargeCode(item.code)
+        if(!key) return
+        normalized[key] = {
+          code: String(item.code || '').trim(),
+          name: String(item.name || '').trim()
+        }
+      })
+      return normalized
+    }
+
+    if(raw && typeof raw === 'object'){
+      Object.keys(raw).forEach(codeKey => {
+        const key = normalizeChargeCode(codeKey)
+        if(!key) return
+        const value = raw[codeKey]
+        if(value && typeof value === 'object'){
+          normalized[key] = {
+            code: String(value.code || codeKey).trim(),
+            name: String(value.name || '').trim()
+          }
+          return
+        }
+        normalized[key] = {
+          code: String(codeKey).trim(),
+          name: String(value == null ? '' : value).trim()
+        }
+      })
+    }
+
+    return normalized
+  }
+
+  async function ensureChargeCatalogLoaded(){
+    if(chargeCatalogLoaded) return chargeCatalog
+    if(chargeCatalogPromise) return chargeCatalogPromise
+
+    chargeCatalogPromise = fetch('media/aos-charges.json', { cache: 'no-store' })
+      .then(resp => {
+        if(!resp.ok) throw new Error(`charge catalog fetch failed (${resp.status})`)
+        return resp.json()
+      })
+      .then(data => {
+        chargeCatalog = normalizeChargeCatalog(data)
+        chargeCatalogLoaded = true
+        return chargeCatalog
+      })
+      .catch(err => {
+        console.warn('Unable to load AOS charge catalog', err && err.message)
+        chargeCatalog = {}
+        chargeCatalogLoaded = true
+        return chargeCatalog
+      })
+
+    return chargeCatalogPromise
+  }
+
+  function lookupCharge(code){
+    const key = normalizeChargeCode(code)
+    if(!key) return null
+    return chargeCatalog[key] || null
+  }
+
+  function extractChargeCodes(chargesText){
+    const text = String(chargesText || '')
+    const matches = []
+    const bracketPattern = /\[([0-9]+(?:\.[0-9]+)+(?:[a-z])?)\]/gi
+    let match = null
+    while((match = bracketPattern.exec(text)) !== null){
+      matches.push(match[1])
+    }
+
+    if(matches.length) return matches
+
+    const plainPattern = /\b([0-9]+(?:\.[0-9]+)+(?:[a-z])?)\b/gi
+    while((match = plainPattern.exec(text)) !== null){
+      matches.push(match[1])
+    }
+    return matches
+  }
+
+  function describeChargeCode(code){
+    const normalized = normalizeChargeCode(code)
+    if(!normalized) return null
+    const entry = lookupCharge(code)
+    const displayCode = entry && entry.code ? entry.code : titleCaseWords(normalized)
+    return {
+      key: normalized,
+      code: displayCode,
+      name: entry && entry.name ? entry.name : 'Unknown charge'
+    }
+  }
+
+  function summarizeCharges(chargesText){
+    const codes = extractChargeCodes(chargesText)
+    if(!codes.length) return []
+    const seen = new Set()
+    const results = []
+    codes.forEach(code => {
+      const detail = describeChargeCode(code)
+      if(!detail) return
+      if(seen.has(detail.key)) return
+      seen.add(detail.key)
+      results.push(detail)
+    })
+    return results
+  }
+
+  function combinedChargeCounts(warrants){
+    const counts = new Map()
+    toArray(warrants).forEach(warrant => {
+      const details = summarizeCharges(warrant && warrant.charges)
+      details.forEach(detail => {
+        const existing = counts.get(detail.key)
+        if(existing){
+          existing.count += 1
+          return
+        }
+        counts.set(detail.key, {
+          key: detail.key,
+          code: detail.code,
+          name: detail.name,
+          count: 1
+        })
+      })
+    })
+
+    return Array.from(counts.values()).sort((a, b) => {
+      if(b.count !== a.count) return b.count - a.count
+      return String(a.code).localeCompare(String(b.code), undefined, { numeric: true, sensitivity: 'base' })
+    })
+  }
+
   function tagLabel(tagId){
     return TAG_LABELS[String(tagId)] || String(tagId)
   }
@@ -146,10 +300,16 @@
   }
 
   window.AOS_UTILS = {
+    combinedChargeCounts,
+    describeChargeCode,
+    ensureChargeCatalogLoaded,
     escapeHtml,
+    extractChargeCodes,
     formatDate,
     groupByUsername,
+    lookupCharge,
     normalizeWarrant,
+    summarizeCharges,
     sortTags,
     tagClass,
     tagLabel,

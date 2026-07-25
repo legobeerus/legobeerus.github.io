@@ -7,8 +7,10 @@
   const profileBio = document.getElementById('aosProfileBio')
   const profileRoles = document.getElementById('aosProfileFacts')
   const profileStats = document.getElementById('aosProfileStats')
+  const chargeSummary = document.getElementById('aosChargeSummary')
   const warrantList = document.getElementById('aosWarrantsList')
   const STORAGE_KEY = 'agentos.dashboard.seen.aos'
+  let canEditCharges = false
 
   function U(){
     return window.AOS_UTILS || {}
@@ -83,6 +85,49 @@
     return wrap
   }
 
+  function chargeChip(detail){
+    const utils = U()
+    const escapeHtml = utils.escapeHtml || (input => String(input == null ? '' : input))
+    return `<span class="aos-charge-chip"><strong>[${escapeHtml(detail.code)}]</strong> ${escapeHtml(detail.name)}</span>`
+  }
+
+  function chargeSummaryInline(chargesText){
+    const utils = U()
+    const details = utils.summarizeCharges ? utils.summarizeCharges(chargesText) : []
+    if(details.length){
+      return `<div class="aos-charge-inline">${details.map(chargeChip).join('')}</div>`
+    }
+    const fallback = String(chargesText || '').trim()
+    if(!fallback) return '<span>Unknown</span>'
+    return `<span>${(utils.escapeHtml ? utils.escapeHtml(fallback) : fallback)}</span>`
+  }
+
+  function renderCombinedCharges(warrants){
+    if(!chargeSummary) return
+    const utils = U()
+    const counts = utils.combinedChargeCounts ? utils.combinedChargeCounts(warrants) : []
+    if(!counts.length){
+      chargeSummary.innerHTML = `
+        <h3>Combined charges</h3>
+        <p class="profile-empty">No parseable charge codes were found on active warrants.</p>
+      `
+      return
+    }
+
+    const escapeHtml = utils.escapeHtml || (input => String(input == null ? '' : input))
+    chargeSummary.innerHTML = `
+      <h3>Combined charges</h3>
+      <div class="aos-charge-totals">
+        ${counts.map(item => `
+          <div class="aos-charge-total-row">
+            <span>${escapeHtml(item.count)}x [${escapeHtml(item.code)}]</span>
+            <strong>${escapeHtml(item.name)}</strong>
+          </div>
+        `).join('')}
+      </div>
+    `
+  }
+
   function renderEmpty(message){
     warrantList.innerHTML = ''
     const empty = document.createElement('div')
@@ -100,6 +145,17 @@
         ${tags.map(tag => `<span class="aos-tag ${tagClass(tag)}">${utils.tagLabel ? utils.tagLabel(tag) : tag}</span>`).join('')}
       </div>
     `
+  }
+
+  async function loadEditAccess(){
+    try{
+      const resp = await fetch(`${AUTH_SERVER}/api/aos/edit-access`, { credentials: 'include' })
+      if(!resp.ok) return false
+      const data = await resp.json()
+      return Boolean(data && data.allowed)
+    }catch(_){
+      return false
+    }
   }
 
   async function loadWarrantsForUsername(username){
@@ -130,6 +186,27 @@
     const deleteButton = warrant.postedByBot === false
       ? `<button type="button" class="is-danger" data-delete-thread="${utils.escapeHtml ? utils.escapeHtml(warrant.threadId) : warrant.threadId}">Delete warrant</button>`
       : ''
+    const escapedThread = utils.escapeHtml ? utils.escapeHtml(warrant.threadId || '') : (warrant.threadId || '')
+    const escapedCharges = utils.escapeHtml ? utils.escapeHtml(warrant.charges || '') : (warrant.charges || '')
+    const editableControls = canEditCharges
+      ? `
+          <button type="button" data-toggle-edit="${escapedThread}">Edit Charges</button>
+          <div class="aos-edit-fields" data-edit-fields="${escapedThread}" hidden>
+            <label>
+              Charges
+              <input type="text" data-edit-charges="${escapedThread}" value="${escapedCharges}" autocomplete="off" />
+            </label>
+            <label>
+              Jail time (minutes)
+              <input type="text" data-edit-jail="${escapedThread}" value="${Number(warrant.jailMinutes || warrant.calculatedTimeMinutes || 0) || 0}" autocomplete="off" />
+            </label>
+            <div class="aos-edit-fields__actions">
+              <button type="button" data-save-edit="${escapedThread}">Save</button>
+              <button type="button" data-cancel-edit="${escapedThread}">Cancel</button>
+            </div>
+          </div>
+        `
+      : ''
     return `
       <article class="dashboard-card aos-warrant-card">
         <div class="dashboard-card__top">
@@ -139,7 +216,7 @@
         <h3 class="aos-warrant-card__title">${utils.escapeHtml ? utils.escapeHtml(warrant.threadName || warrant.username || 'AOS warrant') : (warrant.threadName || warrant.username || 'AOS warrant')}</h3>
         <p class="aos-warrant-card__subtitle">${utils.escapeHtml ? utils.escapeHtml(warrant.summary || warrant.charges || 'No summary available.') : (warrant.summary || warrant.charges || 'No summary available.')}</p>
         <div class="aos-warrant-card__meta">
-          <div class="aos-warrant-card__row"><strong>Submitter</strong><span>${utils.escapeHtml ? utils.escapeHtml(warrant.submitter || 'Unknown') : (warrant.submitter || 'Unknown')}</span></div>
+          <div class="aos-warrant-card__row aos-warrant-card__row--charges"><strong>Charges</strong>${chargeSummaryInline(warrant.charges)}</div>
           <div class="aos-warrant-card__row"><strong>Victims</strong><span>${utils.escapeHtml ? utils.escapeHtml(warrant.victims || 'Unknown') : (warrant.victims || 'Unknown')}</span></div>
           <div class="aos-warrant-card__row"><strong>Jail time</strong><span>${Number(warrant.jailMinutes || warrant.calculatedTimeMinutes || 0) || 0} minutes</span></div>
           <div class="aos-warrant-card__row"><strong>Created</strong><span>${dateLabel || 'Unknown'}</span></div>
@@ -149,10 +226,46 @@
           ${warrant.url ? `<a href="${utils.escapeHtml ? utils.escapeHtml(warrant.url) : warrant.url}" target="_blank" rel="noreferrer">Open thread</a>` : ''}
           ${warrant.profile ? `<a href="${utils.escapeHtml ? utils.escapeHtml(warrant.profile) : warrant.profile}" target="_blank" rel="noreferrer">Open profile</a>` : ''}
           ${warrant.proof ? `<a href="${utils.escapeHtml ? utils.escapeHtml(warrant.proof) : warrant.proof}" target="_blank" rel="noreferrer">View proof</a>` : ''}
+          ${editableControls}
           ${deleteButton}
         </div>
       </article>
     `
+  }
+
+  async function saveEditedCharges(threadId, chargesValue, jailValue){
+    const jailMinutes = Number(String(jailValue || '').trim())
+    if(!Number.isFinite(jailMinutes) || jailMinutes < 0){
+      statusMsg.textContent = 'Edit failed: jail time must be a non-negative number of minutes.'
+      return false
+    }
+    const charges = String(chargesValue || '').trim()
+    if(!charges){
+      statusMsg.textContent = 'Edit failed: charges cannot be empty.'
+      return false
+    }
+
+    try{
+      const resp = await fetch(`${AUTH_SERVER}/api/aos/${encodeURIComponent(threadId)}/charges`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ charges, jailMinutes })
+      })
+      if(resp.status === 401 || resp.status === 403){
+        statusMsg.textContent = 'Edit failed: you are not authorized to edit charges.'
+        return false
+      }
+      if(!resp.ok){
+        statusMsg.textContent = `Edit failed (${resp.status}).`
+        return false
+      }
+      return true
+    }catch(err){
+      console.error(err)
+      statusMsg.textContent = 'Edit failed due to a network or server error.'
+      return false
+    }
   }
 
   async function deleteWarrant(threadId){
@@ -187,6 +300,7 @@
       profileBio.textContent = 'Pick a username from the AOS dashboard.'
       renderFacts([])
       profileStats.innerHTML = ''
+      if(chargeSummary) chargeSummary.innerHTML = ''
       renderEmpty('No warrant profile selected.')
       return
     }
@@ -194,6 +308,10 @@
     statusMsg.textContent = 'Checking login...'
     const me = await ensureAuth()
     if(!me) return
+    if(U().ensureChargeCatalogLoaded){
+      await U().ensureChargeCatalogLoaded()
+    }
+    canEditCharges = await loadEditAccess()
 
     statusMsg.textContent = `Signed in as ${me.username}#${me.discriminator}. Loading warrant profile...`
 
@@ -216,6 +334,7 @@
         profileBio.textContent = ''
         renderFacts([`Username: ${targetUsername}`, 'Warrants: 0'])
         profileStats.innerHTML = ''
+        if(chargeSummary) chargeSummary.innerHTML = ''
         renderEmpty('No active warrants found for this person.')
         statusMsg.textContent = `Signed in as ${me.username}#${me.discriminator}.`
         return
@@ -240,6 +359,7 @@
       profileStats.appendChild(statCard('Warrants', warrants.length))
       profileStats.appendChild(statCard('Total jail time', `${totalJail} minutes`))
       profileStats.appendChild(statCard('Latest thread', latest.threadName || latest.threadId || 'Unknown'))
+      renderCombinedCharges(warrants)
 
       warrantList.innerHTML = ''
       const grid = document.createElement('div')
@@ -252,6 +372,41 @@
         const deleteButton = card && card.querySelector('[data-delete-thread]')
         if(deleteButton){
           deleteButton.addEventListener('click', () => deleteWarrant(warrant.threadId))
+        }
+        const toggleEditButton = card && card.querySelector('[data-toggle-edit]')
+        if(toggleEditButton){
+          toggleEditButton.addEventListener('click', () => {
+            const fields = card.querySelector(`[data-edit-fields="${warrant.threadId}"]`)
+            if(!fields) return
+            fields.hidden = !fields.hidden
+          })
+        }
+        const cancelEditButton = card && card.querySelector('[data-cancel-edit]')
+        if(cancelEditButton){
+          cancelEditButton.addEventListener('click', () => {
+            const fields = card.querySelector(`[data-edit-fields="${warrant.threadId}"]`)
+            const chargesInput = card.querySelector(`[data-edit-charges="${warrant.threadId}"]`)
+            const jailInput = card.querySelector(`[data-edit-jail="${warrant.threadId}"]`)
+            if(chargesInput) chargesInput.value = warrant.charges || ''
+            if(jailInput) jailInput.value = String(Number(warrant.jailMinutes || warrant.calculatedTimeMinutes || 0) || 0)
+            if(fields) fields.hidden = true
+          })
+        }
+        const saveEditButton = card && card.querySelector('[data-save-edit]')
+        if(saveEditButton){
+          saveEditButton.addEventListener('click', async () => {
+            const chargesInput = card.querySelector(`[data-edit-charges="${warrant.threadId}"]`)
+            const jailInput = card.querySelector(`[data-edit-jail="${warrant.threadId}"]`)
+            const ok = await saveEditedCharges(
+              warrant.threadId,
+              chargesInput ? chargesInput.value : '',
+              jailInput ? jailInput.value : ''
+            )
+            if(ok){
+              statusMsg.textContent = `Signed in as ${me.username}#${me.discriminator}. Changes saved.`
+              await loadProfile()
+            }
+          })
         }
         grid.appendChild(card)
       })
@@ -267,6 +422,7 @@
       profileBio.textContent = ''
       renderFacts([`Username: ${targetUsername}`])
       profileStats.innerHTML = ''
+      if(chargeSummary) chargeSummary.innerHTML = ''
       renderEmpty('Failed to load warrant profile.')
     }
   }
