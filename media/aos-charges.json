@@ -1,4 +1,21 @@
 {
-  "1.1": "Misconduct",
-  "1.2": "Insubordination"
+  "1.1A": "Misconduct",
+  "1.1B": "Misconduct",
+  "1.2": "Insubordination",
+  "1.3A": "Resisting and Evading",
+  "1.3B": "Leaving to Evade",
+  "1.4A": "Rules of Engagement",
+  "1.4B": "Rules of Engagement",
+  "1.5A": "Turning a Weapon on a Friendly",
+  "1.5B": "Turning a Weapon on a Friendly",
+  "1.6": "Destruction of SGC Property",
+  "1.7": "Misuse of SGC Equipment",
+  "1.8": "Obstruction of Justice",
+  "1.9": "Treason",
+  "2.1": "Application Eligibility Act",
+  "2.2": "Off-Worlder Rights",
+  "2.3": "Obligation to Comply",
+  "2.4": "Right to Punishment Information",
+  "2.5": "Enlisted Leniency Act",
+  "4.1": "Trespassing"
 }
