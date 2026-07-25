@@ -718,6 +718,60 @@ a.btn.btn-primary:visited{
   gap:8px;
 }
 
+.aos-modal-open{overflow:hidden}
+
+.aos-edit-modal[hidden]{display:none !important}
+.aos-edit-modal{
+  position:fixed;
+  inset:0;
+  z-index:120;
+  display:grid;
+  place-items:center;
+  padding:18px;
+}
+.aos-edit-modal__backdrop{
+  position:absolute;
+  inset:0;
+  background:rgba(0,0,0,0.65);
+  backdrop-filter:blur(2px);
+}
+.aos-edit-modal__dialog{
+  position:relative;
+  width:min(560px, 100%);
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,0.14);
+  background:linear-gradient(180deg, rgba(18,18,18,0.98), rgba(10,10,10,0.98));
+  box-shadow:0 24px 52px rgba(0,0,0,0.44);
+  padding:16px;
+  display:grid;
+  gap:10px;
+}
+.aos-edit-modal__dialog h3{margin:0 0 4px}
+.aos-edit-modal__dialog label{
+  display:grid;
+  gap:6px;
+  color:var(--muted);
+  font-size:.88rem;
+}
+.aos-edit-modal__dialog input{
+  width:100%;
+  padding:10px;
+  border-radius:9px;
+  border:1px solid rgba(255,255,255,0.14);
+  background:rgba(255,255,255,0.04);
+  color:var(--fg);
+}
+.aos-edit-modal__dialog input:focus{
+  outline:none;
+  border-color:rgba(0,175,241,0.45);
+  box-shadow:0 0 0 3px rgba(0,175,241,0.14);
+}
+.aos-edit-modal__actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+
 .aos-tag-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .aos-tag{
   display:inline-flex;

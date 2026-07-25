@@ -11,6 +11,13 @@
   const warrantList = document.getElementById('aosWarrantsList')
   const STORAGE_KEY = 'agentos.dashboard.seen.aos'
   let canEditCharges = false
+  let editModal = null
+  let editModalChargesInput = null
+  let editModalJailInput = null
+  let editModalSaveButton = null
+  let editModalTitle = null
+  let editingWarrant = null
+  let editingMe = null
 
   function U(){
     return window.AOS_UTILS || {}
@@ -128,6 +135,95 @@
     `
   }
 
+  function closeEditModal(){
+    if(!editModal) return
+    editModal.hidden = true
+    document.body.classList.remove('aos-modal-open')
+    editingWarrant = null
+  }
+
+  function ensureEditModal(){
+    if(editModal) return
+
+    editModal = document.createElement('div')
+    editModal.className = 'aos-edit-modal'
+    editModal.hidden = true
+    editModal.innerHTML = `
+      <div class="aos-edit-modal__backdrop" data-edit-modal-close></div>
+      <div class="aos-edit-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="aosEditModalTitle">
+        <h3 id="aosEditModalTitle">Edit Charges</h3>
+        <label>
+          Charges
+          <input type="text" data-modal-edit-charges autocomplete="off" />
+        </label>
+        <label>
+          Jail time (minutes)
+          <input type="text" data-modal-edit-jail autocomplete="off" />
+        </label>
+        <div class="aos-edit-modal__actions">
+          <button type="button" data-modal-save-edit>Save</button>
+          <button type="button" data-edit-modal-close>Cancel</button>
+        </div>
+      </div>
+    `
+
+    document.body.appendChild(editModal)
+
+    editModalChargesInput = editModal.querySelector('[data-modal-edit-charges]')
+    editModalJailInput = editModal.querySelector('[data-modal-edit-jail]')
+    editModalSaveButton = editModal.querySelector('[data-modal-save-edit]')
+    editModalTitle = editModal.querySelector('#aosEditModalTitle')
+
+    editModal.addEventListener('click', event => {
+      const closeTarget = event.target && event.target.closest ? event.target.closest('[data-edit-modal-close]') : null
+      if(closeTarget){
+        closeEditModal()
+      }
+    })
+
+    editModalSaveButton.addEventListener('click', async () => {
+      if(!editingWarrant) return
+      const ok = await saveEditedCharges(
+        editingWarrant.threadId,
+        editModalChargesInput ? editModalChargesInput.value : '',
+        editModalJailInput ? editModalJailInput.value : ''
+      )
+      if(ok){
+        closeEditModal()
+        if(editingMe){
+          statusMsg.textContent = `Signed in as ${editingMe.username}#${editingMe.discriminator}. Changes saved.`
+        }
+        await loadProfile()
+      }
+    })
+
+    document.addEventListener('keydown', event => {
+      if(event.key === 'Escape' && editModal && !editModal.hidden){
+        closeEditModal()
+      }
+    })
+  }
+
+  function openEditModal(warrant, me){
+    ensureEditModal()
+    editingWarrant = warrant
+    editingMe = me
+
+    if(editModalTitle){
+      editModalTitle.textContent = `Edit Charges - ${String(warrant.threadId || 'Warrant')}`
+    }
+    if(editModalChargesInput){
+      editModalChargesInput.value = String(warrant.charges || '')
+    }
+    if(editModalJailInput){
+      editModalJailInput.value = String(Number(warrant.jailMinutes || warrant.calculatedTimeMinutes || 0) || 0)
+    }
+
+    editModal.hidden = false
+    document.body.classList.add('aos-modal-open')
+    if(editModalChargesInput) editModalChargesInput.focus()
+  }
+
   function renderEmpty(message){
     warrantList.innerHTML = ''
     const empty = document.createElement('div')
@@ -187,24 +283,9 @@
       ? `<button type="button" class="is-danger" data-delete-thread="${utils.escapeHtml ? utils.escapeHtml(warrant.threadId) : warrant.threadId}">Delete warrant</button>`
       : ''
     const escapedThread = utils.escapeHtml ? utils.escapeHtml(warrant.threadId || '') : (warrant.threadId || '')
-    const escapedCharges = utils.escapeHtml ? utils.escapeHtml(warrant.charges || '') : (warrant.charges || '')
     const editableControls = canEditCharges
       ? `
-          <button type="button" data-toggle-edit="${escapedThread}">Edit Charges</button>
-          <div class="aos-edit-fields" data-edit-fields="${escapedThread}" hidden>
-            <label>
-              Charges
-              <input type="text" data-edit-charges="${escapedThread}" value="${escapedCharges}" autocomplete="off" />
-            </label>
-            <label>
-              Jail time (minutes)
-              <input type="text" data-edit-jail="${escapedThread}" value="${Number(warrant.jailMinutes || warrant.calculatedTimeMinutes || 0) || 0}" autocomplete="off" />
-            </label>
-            <div class="aos-edit-fields__actions">
-              <button type="button" data-save-edit="${escapedThread}">Save</button>
-              <button type="button" data-cancel-edit="${escapedThread}">Cancel</button>
-            </div>
-          </div>
+          <button type="button" data-open-edit="${escapedThread}">Edit Charges</button>
         `
       : ''
     return `
@@ -301,6 +382,7 @@
       renderFacts([])
       profileStats.innerHTML = ''
       if(chargeSummary) chargeSummary.innerHTML = ''
+      closeEditModal()
       renderEmpty('No warrant profile selected.')
       return
     }
@@ -335,6 +417,7 @@
         renderFacts([`Username: ${targetUsername}`, 'Warrants: 0'])
         profileStats.innerHTML = ''
         if(chargeSummary) chargeSummary.innerHTML = ''
+        closeEditModal()
         renderEmpty('No active warrants found for this person.')
         statusMsg.textContent = `Signed in as ${me.username}#${me.discriminator}.`
         return
@@ -373,40 +456,9 @@
         if(deleteButton){
           deleteButton.addEventListener('click', () => deleteWarrant(warrant.threadId))
         }
-        const toggleEditButton = card && card.querySelector('[data-toggle-edit]')
-        if(toggleEditButton){
-          toggleEditButton.addEventListener('click', () => {
-            const fields = card.querySelector(`[data-edit-fields="${warrant.threadId}"]`)
-            if(!fields) return
-            fields.hidden = !fields.hidden
-          })
-        }
-        const cancelEditButton = card && card.querySelector('[data-cancel-edit]')
-        if(cancelEditButton){
-          cancelEditButton.addEventListener('click', () => {
-            const fields = card.querySelector(`[data-edit-fields="${warrant.threadId}"]`)
-            const chargesInput = card.querySelector(`[data-edit-charges="${warrant.threadId}"]`)
-            const jailInput = card.querySelector(`[data-edit-jail="${warrant.threadId}"]`)
-            if(chargesInput) chargesInput.value = warrant.charges || ''
-            if(jailInput) jailInput.value = String(Number(warrant.jailMinutes || warrant.calculatedTimeMinutes || 0) || 0)
-            if(fields) fields.hidden = true
-          })
-        }
-        const saveEditButton = card && card.querySelector('[data-save-edit]')
-        if(saveEditButton){
-          saveEditButton.addEventListener('click', async () => {
-            const chargesInput = card.querySelector(`[data-edit-charges="${warrant.threadId}"]`)
-            const jailInput = card.querySelector(`[data-edit-jail="${warrant.threadId}"]`)
-            const ok = await saveEditedCharges(
-              warrant.threadId,
-              chargesInput ? chargesInput.value : '',
-              jailInput ? jailInput.value : ''
-            )
-            if(ok){
-              statusMsg.textContent = `Signed in as ${me.username}#${me.discriminator}. Changes saved.`
-              await loadProfile()
-            }
-          })
+        const editButton = card && card.querySelector('[data-open-edit]')
+        if(editButton){
+          editButton.addEventListener('click', () => openEditModal(warrant, me))
         }
         grid.appendChild(card)
       })
@@ -423,6 +475,7 @@
       renderFacts([`Username: ${targetUsername}`])
       profileStats.innerHTML = ''
       if(chargeSummary) chargeSummary.innerHTML = ''
+      closeEditModal()
       renderEmpty('Failed to load warrant profile.')
     }
   }
