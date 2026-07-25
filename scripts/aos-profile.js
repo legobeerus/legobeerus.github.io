@@ -161,8 +161,8 @@
           <input type="text" data-modal-edit-jail autocomplete="off" />
         </label>
         <div class="aos-edit-modal__actions">
-          <button type="button" data-modal-save-edit>Save</button>
-          <button type="button" data-edit-modal-close>Cancel</button>
+          <button type="button" class="btn btn-primary" data-modal-save-edit>Save</button>
+          <button type="button" class="btn btn-ghost" data-edit-modal-close>Cancel</button>
         </div>
       </div>
     `
@@ -210,7 +210,7 @@
     editingMe = me
 
     if(editModalTitle){
-      editModalTitle.textContent = `Edit Charges - ${String(warrant.threadId || 'Warrant')}`
+      editModalTitle.textContent = `Edit Charges - ${String(warrant.username || 'Unknown').trim() || 'Unknown'}`
     }
     if(editModalChargesInput){
       editModalChargesInput.value = String(warrant.charges || '')

@@ -771,6 +771,10 @@ a.btn.btn-primary:visited{
   flex-wrap:wrap;
   gap:8px;
 }
+.aos-edit-modal__actions .btn{
+  min-width:110px;
+  text-align:center;
+}
 
 .aos-tag-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .aos-tag{
