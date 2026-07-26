@@ -96,7 +96,9 @@
   function chargeChip(detail){
     const utils = U()
     const escapeHtml = utils.escapeHtml || (input => String(input == null ? '' : input))
-    return `<span class="aos-charge-chip"><strong>[${escapeHtml(detail.code)}]</strong> ${escapeHtml(detail.name)}</span>`
+    const quantity = Number.isFinite(detail && detail.count) ? Math.max(1, Math.floor(detail.count)) : 1
+    const qtyLabel = quantity > 1 ? `${escapeHtml(quantity)}x ` : ''
+    return `<span class="aos-charge-chip"><strong>${qtyLabel}[${escapeHtml(detail.code)}]</strong> ${escapeHtml(detail.name)}</span>`
   }
 
   function chargeSummaryInline(chargesText){

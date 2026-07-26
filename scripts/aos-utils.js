@@ -171,21 +171,61 @@
   }
 
   function extractChargeCodes(chargesText){
+    const entries = parseChargeEntries(chargesText)
+    const codes = []
+    entries.forEach(entry => {
+      const qty = Number.isFinite(entry.quantity) ? Math.max(1, Math.floor(entry.quantity)) : 1
+      for(let i = 0; i < qty; i += 1){
+        codes.push(entry.code)
+      }
+    })
+    return codes
+  }
+
+  function parseChargeEntries(chargesText){
     const text = String(chargesText || '')
-    const matches = []
-    const bracketPattern = /\[([0-9]+(?:\.[0-9]+)+(?:[a-z])?)\]/gi
+    const entries = []
+    const pattern = /(\d+)\s*x\s*\[([0-9]+(?:\.[0-9]+)+(?:[a-z])?)\]|\b(\d+)\s*x\s*([0-9]+(?:\.[0-9]+)+(?:[a-z])?)\b|\[([0-9]+(?:\.[0-9]+)+(?:[a-z])?)\]\s*x\s*(\d+)|\b([0-9]+(?:\.[0-9]+)+(?:[a-z])?)\s*x\s*(\d+)\b|\[([0-9]+(?:\.[0-9]+)+(?:[a-z])?)\]|\b([0-9]+(?:\.[0-9]+)+(?:[a-z])?)\b/gi
     let match = null
-    while((match = bracketPattern.exec(text)) !== null){
-      matches.push(match[1])
+    while((match = pattern.exec(text)) !== null){
+      const prefBracketQty = match[1]
+      const prefBracketCode = match[2]
+      const prefQty = match[3]
+      const prefCode = match[4]
+      const suffBracketCode = match[5]
+      const suffBracketQty = match[6]
+      const suffCode = match[7]
+      const suffQty = match[8]
+      const bracketCode = match[9]
+      const plainCode = match[10]
+
+      let code = ''
+      let quantity = 1
+      if(prefBracketCode){
+        code = prefBracketCode
+        quantity = Number(prefBracketQty)
+      }else if(prefCode){
+        code = prefCode
+        quantity = Number(prefQty)
+      }else if(suffBracketCode){
+        code = suffBracketCode
+        quantity = Number(suffBracketQty)
+      }else if(suffCode){
+        code = suffCode
+        quantity = Number(suffQty)
+      }else if(bracketCode){
+        code = bracketCode
+      }else if(plainCode){
+        code = plainCode
+      }
+
+      const normalizedCode = String(code || '').trim()
+      if(!normalizedCode) continue
+      const normalizedQuantity = Number.isFinite(quantity) ? Math.max(1, Math.floor(quantity)) : 1
+      entries.push({ code: normalizedCode, quantity: normalizedQuantity })
     }
 
-    if(matches.length) return matches
-
-    const plainPattern = /\b([0-9]+(?:\.[0-9]+)+(?:[a-z])?)\b/gi
-    while((match = plainPattern.exec(text)) !== null){
-      matches.push(match[1])
-    }
-    return matches
+    return entries
   }
 
   function describeChargeCode(code){
@@ -201,18 +241,26 @@
   }
 
   function summarizeCharges(chargesText){
-    const codes = extractChargeCodes(chargesText)
-    if(!codes.length) return []
-    const seen = new Set()
-    const results = []
-    codes.forEach(code => {
-      const detail = describeChargeCode(code)
+    const entries = parseChargeEntries(chargesText)
+    if(!entries.length) return []
+    const summaryByKey = new Map()
+    entries.forEach(entry => {
+      const detail = describeChargeCode(entry.code)
       if(!detail) return
-      if(seen.has(detail.key)) return
-      seen.add(detail.key)
-      results.push(detail)
+      const quantity = Number.isFinite(entry.quantity) ? Math.max(1, Math.floor(entry.quantity)) : 1
+      const existing = summaryByKey.get(detail.key)
+      if(existing){
+        existing.count += quantity
+        return
+      }
+      summaryByKey.set(detail.key, {
+        key: detail.key,
+        code: detail.code,
+        name: detail.name,
+        count: quantity
+      })
     })
-    return results
+    return Array.from(summaryByKey.values())
   }
 
   function combinedChargeCounts(warrants){
@@ -222,14 +270,14 @@
       details.forEach(detail => {
         const existing = counts.get(detail.key)
         if(existing){
-          existing.count += 1
+          existing.count += Number.isFinite(detail.count) ? detail.count : 1
           return
         }
         counts.set(detail.key, {
           key: detail.key,
           code: detail.code,
           name: detail.name,
-          count: 1
+          count: Number.isFinite(detail.count) ? detail.count : 1
         })
       })
     })
