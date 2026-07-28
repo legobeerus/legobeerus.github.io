@@ -973,13 +973,18 @@ function startApp(){
     }
 
     const roles = roleEntriesFromPayload(lookup.payload);
-    const allowed = typeof (lookup.payload && lookup.payload.allowed) === 'boolean'
+    const hasConfiguredRoleIds = Boolean(allowedRoleIds && allowedRoleIds.size);
+    const allowedByConfiguredRoleIds = hasConfiguredRoleIds
+      ? roles.some(role => allowedRoleIds.has(role.id) || allowedRoleIds.has(role.name))
+      : false;
+    const remoteAllowed = typeof (lookup.payload && lookup.payload.allowed) === 'boolean'
       ? lookup.payload.allowed
       : typeof (lookup.payload && lookup.payload.isAllowed) === 'boolean'
         ? lookup.payload.isAllowed
-        : allowedRoleIds && allowedRoleIds.size
-          ? roles.some(role => allowedRoleIds.has(role.id) || allowedRoleIds.has(role.name))
-          : false;
+        : false;
+
+    // Prefer explicit local role configuration over bot-provided allow flags.
+    const allowed = hasConfiguredRoleIds ? allowedByConfiguredRoleIds : remoteAllowed;
 
     return { allowed, status: allowed ? 200 : 403, roles, details: lookup.payload, url: lookup.url };
   }
