@@ -47,6 +47,7 @@ let examReviewsMeta = {}; // column_name -> { is_nullable, column_default }
 let hasSubmissionEventsTable = false;
 let hasReviewLocksTable = false;
 let hasAosWarrantsTable = false;
+let hasBotEventsTable = false;
 let aosTableColumns = new Set();
 if(!envDatabaseUrl){
   console.warn('DATABASE_URL not set in environment; Postgres support is disabled.');
@@ -151,6 +152,10 @@ if(!envDatabaseUrl){
         hasAosWarrantsTable = r.rows[0] && r.rows[0].exists;
         console.log('bot_active_aos table exists:', hasAosWarrantsTable);
       }).catch(e=>{ console.warn('Failed to check bot_active_aos table existence:', e && e.message) });
+      pgPool.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='bot_events') AS exists`).then(r=>{
+        hasBotEventsTable = r.rows[0] && r.rows[0].exists;
+        console.log('bot_events table exists:', hasBotEventsTable);
+      }).catch(e=>{ console.warn('Failed to check bot_events table existence:', e && e.message) });
       pgPool.query(`SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='bot_active_aos'`).then(cols=>{
         aosTableColumns = new Set((cols.rows || []).map(row => String(row.column_name || '').trim()).filter(Boolean));
         console.log('bot_active_aos columns:', Array.from(aosTableColumns));
@@ -246,7 +251,10 @@ function startApp(){
       ['/grade.html', verifyGuildRoleAccess],
       ['/history.html', verifyGuildRoleAccess],
       ['/aos-dashboard.html', verifyAosRoleAccess],
-      ['/aos-profile.html', verifyAosRoleAccess]
+      ['/aos-profile.html', verifyAosRoleAccess],
+      ['/event-panel.html', verifyAosRoleAccess],
+      ['/event-panel', verifyAosRoleAccess],
+      ['/event-panel/', verifyAosRoleAccess]
     ]);
     const verifyAccess = protectedPages.get(req.path);
     if(!verifyAccess) return next();
@@ -502,6 +510,28 @@ function startApp(){
       createdAt: toText(source.createdAt || source.created_at || row.created_at || ''),
       activatedAt: toText(source.activatedAt || source.activated_at || row.activated_at || ''),
       lastSeenAt: toText(source.lastSeenAt || source.last_seen_at || row.last_seen_at || '')
+    };
+  }
+
+  function normalizeBotEvent(row){
+    const event = row || {};
+    return {
+      id: toText(event.id),
+      guildId: toText(event.guild_id),
+      title: toText(event.title),
+      description: toText(event.description),
+      hostsText: toText(event.hosts_text),
+      startAt: toText(event.start_at),
+      isRecurring: toBoolean(event.is_recurring),
+      recurringWeekday: toNumber(event.recurring_weekday),
+      recurringTimeUtc: toText(event.recurring_time_utc),
+      nextRunAt: toText(event.next_run_at),
+      lastRunAt: toText(event.last_run_at),
+      pingRoleId: toText(event.ping_role_id),
+      createdBy: toText(event.created_by),
+      status: toText(event.status),
+      createdAt: toText(event.created_at),
+      updatedAt: toText(event.updated_at)
     };
   }
 
@@ -1011,6 +1041,44 @@ function startApp(){
       return res.json(rows);
     }catch(e){
       console.error('DB list AOS failed', e && e.message);
+      return res.status(502).json({ error: 'db_error' });
+    }
+  });
+
+  app.get('/api/events', async (req, res)=>{
+    if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
+    const access = await verifyAosRoleAccess(req.session.user.id);
+    if(!access.allowed) return res.status(access.status >= 500 ? access.status : 403).json({ error: access.status >= 500 ? 'role_check_unavailable' : 'forbidden' });
+    if(!pgPool) return res.status(500).json({ error: 'server not configured to read DB' });
+    if(!hasBotEventsTable) return res.status(500).json({ error: 'events_table_missing' });
+
+    try{
+      const q = await pgPool.query(`
+        SELECT
+          id,
+          guild_id,
+          title,
+          description,
+          hosts_text,
+          start_at,
+          is_recurring,
+          recurring_weekday,
+          recurring_time_utc,
+          next_run_at,
+          last_run_at,
+          ping_role_id,
+          created_by,
+          status,
+          created_at,
+          updated_at
+        FROM bot_events
+        ORDER BY COALESCE(next_run_at, start_at, created_at) ASC, id ASC
+        LIMIT 2000
+      `);
+      const rows = (q.rows || []).map(normalizeBotEvent);
+      return res.json(rows);
+    }catch(e){
+      console.error('DB list bot_events failed', e && e.message);
       return res.status(502).json({ error: 'db_error' });
     }
   });

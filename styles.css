@@ -823,6 +823,17 @@ a.btn.btn-primary:visited{
 }
 .aos-search-summary{margin:8px 0 0;color:var(--muted);font-size:.95rem}
 
+.event-panel-page .dashboard-header{margin-bottom:10px}
+.event-grid{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.event-card .aos-warrant-card__row span{text-align:right;word-break:break-word;max-width:60%}
+.event-card__status{
+  text-transform:uppercase;
+  letter-spacing:.04em;
+  background:rgba(0,175,241,0.14);
+  border-color:rgba(0,175,241,0.28);
+  color:#c9f3ff;
+}
+
 .history-controls{
   margin:14px 0 10px;
 }

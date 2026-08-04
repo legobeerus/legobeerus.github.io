@@ -3,7 +3,8 @@
   const AUTH_SERVER = (window && window.__AUTH_SERVER__) || window.location.origin
   const STORAGE_KEYS = {
     exams: 'agentos.dashboard.seen.exams',
-    aos: 'agentos.dashboard.seen.aos'
+    aos: 'agentos.dashboard.seen.aos',
+    events: 'agentos.dashboard.seen.events'
   }
 
   if(!cards) return
@@ -53,7 +54,7 @@
       .replace(/'/g, '&#39;')
   }
 
-  function renderCards(examCard, aosCard){
+  function renderCards(examCard, aosCard, eventsCard){
     setCards(`
     <a class="dashboard-card dashboard-card--selector" href="exams.html">
       <div class="dashboard-card__top">
@@ -77,16 +78,29 @@
         <div class="dashboard-card__detail"><strong>Approved to view</strong><span>${escapeHtml(aosCard.approvedLabel)}</span></div>
       </div>
     </a>
+    <a class="dashboard-card dashboard-card--selector" href="event-panel.html">
+      <div class="dashboard-card__top">
+        <span class="dashboard-card__badge ${eventsCard.unread ? 'dashboard-card__badge--new' : 'dashboard-card__badge--current'}">${eventsCard.unread ? 'NEW' : 'CURRENT'}</span>
+        <span class="dashboard-card__link">Open</span>
+      </div>
+      <h3>Event Panel</h3>
+      <div class="dashboard-card__details">
+        <div class="dashboard-card__detail"><strong>Active</strong><span>${escapeHtml(eventsCard.activeCount)} event${eventsCard.activeCount === 1 ? '' : 's'}</span></div>
+        <div class="dashboard-card__detail"><strong>Approved to view</strong><span>${escapeHtml(eventsCard.approvedLabel)}</span></div>
+      </div>
+    </a>
   `)
   }
 
   async function loadCardData(){
     const examSeenAt = readSeenAt(STORAGE_KEYS.exams)
     const aosSeenAt = readSeenAt(STORAGE_KEYS.aos)
+    const eventsSeenAt = readSeenAt(STORAGE_KEYS.events)
 
-    const [examResp, aosResp] = await Promise.allSettled([
+    const [examResp, aosResp, eventsResp] = await Promise.allSettled([
       fetch(`${AUTH_SERVER}/api/exams?status=active`, { credentials: 'include' }),
-      fetch(`${AUTH_SERVER}/api/aos/active`, { credentials: 'include' })
+      fetch(`${AUTH_SERVER}/api/aos/active`, { credentials: 'include' }),
+      fetch(`${AUTH_SERVER}/api/events`, { credentials: 'include' })
     ])
 
     let exams = []
@@ -105,11 +119,20 @@
       }catch(_){ aos = [] }
     }
 
+    let events = []
+    if(eventsResp.status === 'fulfilled' && eventsResp.value.ok){
+      try{
+        const eventsData = await eventsResp.value.json()
+        events = Array.isArray(eventsData) ? eventsData : []
+      }catch(_){ events = [] }
+    }
+
     const activeExams = exams.filter(item => String(item && item.status || '').toLowerCase() === 'active')
     const activeAos = aos.filter(item => item && item.username)
 
     const examLatest = latestTime(activeExams, item => item.created_at || item.createdAt || item.updated_at || item.updatedAt)
     const aosLatest = latestTime(activeAos, item => item.activatedAt || item.createdAt || item.lastSeenAt)
+    const eventsLatest = latestTime(events, item => item.nextRunAt || item.startAt || item.updatedAt || item.createdAt)
 
     const examCard = {
       unread: examLatest > examSeenAt,
@@ -125,7 +148,14 @@
       approvedLabel: 'Office of Special Investigations'
     }
 
-    renderCards(examCard, aosCard)
+    const eventsCard = {
+      unread: eventsLatest > eventsSeenAt,
+      activeCount: events.length,
+      latestLabel: eventsLatest ? new Date(eventsLatest).toLocaleString() : 'No events',
+      approvedLabel: 'Office of Special Investigations'
+    }
+
+    renderCards(examCard, aosCard, eventsCard)
   }
 
   setCards(`
@@ -139,11 +169,17 @@
       <h3>AOS Dashboard</h3>
       <div class="dashboard-card__details"><div class="dashboard-card__detail"><strong>Active</strong><span>Loading...</span></div><div class="dashboard-card__detail"><strong>Approved to view</strong><span>Loading...</span></div></div>
     </a>
+    <a class="dashboard-card dashboard-card--selector" href="event-panel.html">
+      <div class="dashboard-card__top"><span class="dashboard-card__badge">CURRENT</span><span class="dashboard-card__link">Open</span></div>
+      <h3>Event Panel</h3>
+      <div class="dashboard-card__details"><div class="dashboard-card__detail"><strong>Active</strong><span>Loading...</span></div><div class="dashboard-card__detail"><strong>Approved to view</strong><span>Loading...</span></div></div>
+    </a>
   `)
 
   loadCardData().catch(()=>{
     renderCards(
       { unread: false, activeCount: 0, latestLabel: 'Unavailable', approvedLabel: 'Department of Administration or OSI Command' },
+      { unread: false, activeCount: 0, latestLabel: 'Unavailable', approvedLabel: 'Office of Special Investigations' },
       { unread: false, activeCount: 0, latestLabel: 'Unavailable', approvedLabel: 'Office of Special Investigations' }
     )
   })
