@@ -48,6 +48,7 @@ let hasSubmissionEventsTable = false;
 let hasReviewLocksTable = false;
 let hasAosWarrantsTable = false;
 let hasBotEventsTable = false;
+let hasEventAttendeesTable = false;
 let aosTableColumns = new Set();
 if(!envDatabaseUrl){
   console.warn('DATABASE_URL not set in environment; Postgres support is disabled.');
@@ -115,6 +116,17 @@ if(!envDatabaseUrl){
         raw_payload JSONB,
         deleted_at TIMESTAMPTZ
       )`).catch(e=>{ console.warn('bot_active_aos table check failed', e && e.message) });
+      pgPool.query(`CREATE TABLE IF NOT EXISTS event_attendees (
+        event_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        username TEXT,
+        discriminator TEXT,
+        avatar TEXT,
+        attending BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (event_id, user_id)
+      )`).catch(e=>{ console.warn('event_attendees table check failed', e && e.message) });
 
       pgPool.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='exams_sessions') AS exists`).then(r=>{
         hasExamSessionsTable = r.rows[0] && r.rows[0].exists;
@@ -156,6 +168,10 @@ if(!envDatabaseUrl){
         hasBotEventsTable = r.rows[0] && r.rows[0].exists;
         console.log('bot_events table exists:', hasBotEventsTable);
       }).catch(e=>{ console.warn('Failed to check bot_events table existence:', e && e.message) });
+      pgPool.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='event_attendees') AS exists`).then(r=>{
+        hasEventAttendeesTable = r.rows[0] && r.rows[0].exists;
+        console.log('event_attendees table exists:', hasEventAttendeesTable);
+      }).catch(e=>{ console.warn('Failed to check event_attendees table existence:', e && e.message) });
       pgPool.query(`SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='bot_active_aos'`).then(cols=>{
         aosTableColumns = new Set((cols.rows || []).map(row => String(row.column_name || '').trim()).filter(Boolean));
         console.log('bot_active_aos columns:', Array.from(aosTableColumns));
@@ -532,6 +548,143 @@ function startApp(){
       status: toText(event.status),
       createdAt: toText(event.created_at),
       updatedAt: toText(event.updated_at)
+    };
+  }
+
+  function formatUserTag(user){
+    if(!user) return 'Unknown user';
+    const username = String(user.username || '').trim();
+    const discriminator = String(user.discriminator || '').trim();
+    if(username && discriminator && discriminator !== '0') return `${username}#${discriminator}`;
+    if(username) return username;
+    return String(user.id || 'Unknown user');
+  }
+
+  function avatarUrlForUser(userId, avatar, discriminator){
+    const id = String(userId || '').trim();
+    const hash = String(avatar || '').trim();
+    if(id && hash) return `https://cdn.discordapp.com/avatars/${id}/${hash}.png?size=64`;
+    const disc = Number(discriminator) || 0;
+    return `https://cdn.discordapp.com/embed/avatars/${Math.abs(disc) % 5}.png`;
+  }
+
+  async function getAttendanceSummaryForEvents(eventIds, viewerUserId){
+    const ids = (Array.isArray(eventIds) ? eventIds : []).map(id => String(id || '').trim()).filter(Boolean);
+    const summary = new Map();
+    if(!ids.length || !pgPool || !hasEventAttendeesTable) return summary;
+
+    const countRes = await pgPool.query(`
+      SELECT event_id, COUNT(*)::int AS total
+      FROM event_attendees
+      WHERE attending = TRUE
+        AND event_id = ANY($1::text[])
+      GROUP BY event_id
+    `, [ids]);
+
+    const previewRes = await pgPool.query(`
+      SELECT event_id, user_id, username, discriminator, avatar, updated_at
+      FROM (
+        SELECT
+          event_id,
+          user_id,
+          username,
+          discriminator,
+          avatar,
+          updated_at,
+          ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY updated_at DESC) AS rn
+        FROM event_attendees
+        WHERE attending = TRUE
+          AND event_id = ANY($1::text[])
+      ) ranked
+      WHERE rn <= 3
+      ORDER BY event_id, updated_at DESC
+    `, [ids]);
+
+    const meRes = viewerUserId
+      ? await pgPool.query(`
+          SELECT event_id
+          FROM event_attendees
+          WHERE attending = TRUE
+            AND user_id = $2
+            AND event_id = ANY($1::text[])
+        `, [ids, String(viewerUserId)])
+      : { rows: [] };
+
+    ids.forEach(eventId => {
+      summary.set(eventId, { count: 0, meAttending: false, preview: [] });
+    });
+
+    (countRes.rows || []).forEach(row => {
+      const eventId = String(row.event_id || '');
+      const current = summary.get(eventId) || { count: 0, meAttending: false, preview: [] };
+      current.count = Number(row.total || 0);
+      summary.set(eventId, current);
+    });
+
+    (previewRes.rows || []).forEach(row => {
+      const eventId = String(row.event_id || '');
+      const current = summary.get(eventId) || { count: 0, meAttending: false, preview: [] };
+      current.preview.push({
+        userId: String(row.user_id || ''),
+        username: String(row.username || ''),
+        discriminator: String(row.discriminator || ''),
+        avatar: String(row.avatar || ''),
+        tag: formatUserTag({ id: row.user_id, username: row.username, discriminator: row.discriminator }),
+        avatarUrl: avatarUrlForUser(row.user_id, row.avatar, row.discriminator),
+        updatedAt: row.updated_at || null
+      });
+      summary.set(eventId, current);
+    });
+
+    (meRes.rows || []).forEach(row => {
+      const eventId = String(row.event_id || '');
+      const current = summary.get(eventId) || { count: 0, meAttending: false, preview: [] };
+      current.meAttending = true;
+      summary.set(eventId, current);
+    });
+
+    return summary;
+  }
+
+  async function getEventAttendeesDetail(eventId, viewerUserId){
+    const eventText = String(eventId || '').trim();
+    if(!eventText || !pgPool || !hasEventAttendeesTable) return { count: 0, meAttending: false, attendees: [] };
+
+    const attendeesRes = await pgPool.query(`
+      SELECT user_id, username, discriminator, avatar, updated_at
+      FROM event_attendees
+      WHERE event_id = $1
+        AND attending = TRUE
+      ORDER BY updated_at DESC
+      LIMIT 500
+    `, [eventText]);
+
+    const meRes = viewerUserId
+      ? await pgPool.query(`
+          SELECT 1 AS found
+          FROM event_attendees
+          WHERE event_id = $1
+            AND user_id = $2
+            AND attending = TRUE
+          LIMIT 1
+        `, [eventText, String(viewerUserId)])
+      : { rowCount: 0 };
+
+    const attendees = (attendeesRes.rows || []).map(row => ({
+      userId: String(row.user_id || ''),
+      username: String(row.username || ''),
+      discriminator: String(row.discriminator || ''),
+      avatar: String(row.avatar || ''),
+      tag: formatUserTag({ id: row.user_id, username: row.username, discriminator: row.discriminator }),
+      avatarUrl: avatarUrlForUser(row.user_id, row.avatar, row.discriminator),
+      updatedAt: row.updated_at || null
+    }));
+
+    return {
+      count: attendees.length,
+      meAttending: Boolean(meRes && meRes.rowCount),
+      attendees,
+      preview: attendees.slice(0, 3)
     };
   }
 
@@ -1076,9 +1229,79 @@ function startApp(){
         LIMIT 2000
       `);
       const rows = (q.rows || []).map(normalizeBotEvent);
+      const eventIds = rows.map(row => row.id).filter(Boolean);
+      const attendanceSummary = await getAttendanceSummaryForEvents(eventIds, req.session.user.id);
+      rows.forEach(row => {
+        const summary = attendanceSummary.get(String(row.id || '')) || { count: 0, meAttending: false, preview: [] };
+        row.attendance = summary;
+      });
       return res.json(rows);
     }catch(e){
       console.error('DB list bot_events failed', e && e.message);
+      return res.status(502).json({ error: 'db_error' });
+    }
+  });
+
+  app.get('/api/events/:id/attendees', async (req, res)=>{
+    if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
+    const access = await verifyAosRoleAccess(req.session.user.id);
+    if(!access.allowed) return res.status(access.status >= 500 ? access.status : 403).json({ error: access.status >= 500 ? 'role_check_unavailable' : 'forbidden' });
+    if(!pgPool) return res.status(500).json({ error: 'server not configured to read DB' });
+    if(!hasBotEventsTable) return res.status(500).json({ error: 'events_table_missing' });
+    if(!hasEventAttendeesTable) return res.status(500).json({ error: 'event_attendees_table_missing' });
+
+    const eventId = String(req.params.id || '').trim();
+    if(!eventId) return res.status(400).json({ error: 'missing_event_id' });
+
+    try{
+      const eventExists = await pgPool.query(`SELECT 1 FROM bot_events WHERE id::text = $1 LIMIT 1`, [eventId]);
+      if(!eventExists.rowCount) return res.status(404).json({ error: 'event_not_found' });
+      const detail = await getEventAttendeesDetail(eventId, req.session.user.id);
+      return res.json(detail);
+    }catch(e){
+      console.error('DB list event attendees failed', e && e.message);
+      return res.status(502).json({ error: 'db_error' });
+    }
+  });
+
+  app.post('/api/events/:id/attendees', async (req, res)=>{
+    if(!req.session || !req.session.user) return res.status(401).json({ error: 'unauthenticated' });
+    const access = await verifyAosRoleAccess(req.session.user.id);
+    if(!access.allowed) return res.status(access.status >= 500 ? access.status : 403).json({ error: access.status >= 500 ? 'role_check_unavailable' : 'forbidden' });
+    if(!pgPool) return res.status(500).json({ error: 'server not configured to read DB' });
+    if(!hasBotEventsTable) return res.status(500).json({ error: 'events_table_missing' });
+    if(!hasEventAttendeesTable) return res.status(500).json({ error: 'event_attendees_table_missing' });
+
+    const eventId = String(req.params.id || '').trim();
+    if(!eventId) return res.status(400).json({ error: 'missing_event_id' });
+
+    const rawAttending = req.body && Object.prototype.hasOwnProperty.call(req.body, 'attending')
+      ? req.body.attending
+      : true;
+    const attending = toBoolean(rawAttending);
+    if(attending == null) return res.status(400).json({ error: 'invalid_attending_value' });
+
+    try{
+      const eventExists = await pgPool.query(`SELECT 1 FROM bot_events WHERE id::text = $1 LIMIT 1`, [eventId]);
+      if(!eventExists.rowCount) return res.status(404).json({ error: 'event_not_found' });
+
+      const user = req.session.user;
+      await pgPool.query(`
+        INSERT INTO event_attendees (event_id, user_id, username, discriminator, avatar, attending, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+        ON CONFLICT (event_id, user_id)
+        DO UPDATE SET
+          username = EXCLUDED.username,
+          discriminator = EXCLUDED.discriminator,
+          avatar = EXCLUDED.avatar,
+          attending = EXCLUDED.attending,
+          updated_at = NOW()
+      `, [eventId, String(user.id || ''), String(user.username || ''), String(user.discriminator || ''), String(user.avatar || ''), attending]);
+
+      const detail = await getEventAttendeesDetail(eventId, req.session.user.id);
+      return res.json({ ok: true, eventId, attending, attendance: detail });
+    }catch(e){
+      console.error('DB update event attendee failed', e && e.message);
       return res.status(502).json({ error: 'db_error' });
     }
   });

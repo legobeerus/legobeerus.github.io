@@ -7,6 +7,7 @@
   const searchSummary = document.getElementById('eventsSearchSummary')
 
   let allEvents = []
+  let openAttendeesMenu = null
 
   function ensureAuth(){
     return fetch(`${AUTH_SERVER}/api/me`, { credentials: 'include' })
@@ -48,11 +49,133 @@
     return days[i]
   }
 
-  function formatTime(value){
+  function shortTime(value){
     if(!value) return 'N/A'
     const date = new Date(value)
-    if(!Number.isNaN(date.getTime())) return date.toLocaleString()
-    return String(value)
+    if(Number.isNaN(date.getTime())) return String(value)
+    return date.toLocaleString(undefined, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
+  function truncate(value, maxLength){
+    const text = String(value || '').trim()
+    if(text.length <= maxLength) return text
+    return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}...`
+  }
+
+  function attendeeSummary(event){
+    const attendance = event && event.attendance && typeof event.attendance === 'object' ? event.attendance : {}
+    const count = Number(attendance.count || 0)
+    const preview = Array.isArray(attendance.preview) ? attendance.preview : []
+    const meAttending = Boolean(attendance.meAttending)
+    return { count, preview, meAttending }
+  }
+
+  function attendeeStackHtml(event){
+    const summary = attendeeSummary(event)
+    const preview = summary.preview.slice(0, 3)
+    const remaining = Math.max(summary.count - preview.length, 0)
+    const avatars = preview.map((person, idx) => {
+      const left = idx * 18
+      const name = escapeHtml(person.tag || person.username || person.userId || 'Attendee')
+      const src = escapeHtml(person.avatarUrl || '')
+      if(src){
+        return `<img class="event-attendee-avatar" style="left:${left}px" src="${src}" alt="${name}" title="${name}" />`
+      }
+      return `<span class="event-attendee-avatar event-attendee-avatar--fallback" style="left:${left}px" title="${name}">${escapeHtml((person.username || '?').slice(0, 1).toUpperCase())}</span>`
+    }).join('')
+
+    const plus = remaining > 0
+      ? `<span class="event-attendee-plus" style="left:${preview.length * 18}px">+${remaining}</span>`
+      : ''
+
+    const visible = preview.length + (remaining > 0 ? 1 : 0)
+    const width = Math.max(30, visible ? (visible - 1) * 18 + 30 : 30)
+
+    return `
+      <span class="event-attendee-stack" style="width:${width}px">
+        ${avatars}
+        ${plus}
+      </span>
+      <span class="event-attendee-count">${summary.count} attending</span>
+    `
+  }
+
+  function updateCardAttendance(eventId, attendance){
+    const target = allEvents.find(event => String(event.id) === String(eventId))
+    if(!target) return
+    target.attendance = {
+      count: Number(attendance && attendance.count || 0),
+      meAttending: Boolean(attendance && attendance.meAttending),
+      preview: Array.isArray(attendance && attendance.preview) ? attendance.preview : []
+    }
+  }
+
+  function closeAttendeesMenu(){
+    if(!openAttendeesMenu) return
+    openAttendeesMenu.remove()
+    openAttendeesMenu = null
+  }
+
+  function renderAttendeesMenu(hostCard, payload){
+    closeAttendeesMenu()
+
+    const attendees = Array.isArray(payload && payload.attendees) ? payload.attendees : []
+    const count = Number(payload && payload.count || attendees.length || 0)
+
+    const menu = document.createElement('div')
+    menu.className = 'event-attendee-menu'
+    menu.innerHTML = `
+      <div class="event-attendee-menu__title">Attendees (${count})</div>
+      <div class="event-attendee-menu__list"></div>
+    `
+
+    const list = menu.querySelector('.event-attendee-menu__list')
+    if(!attendees.length){
+      const empty = document.createElement('p')
+      empty.className = 'event-attendee-menu__empty'
+      empty.textContent = 'No attendees yet.'
+      list.appendChild(empty)
+    }else{
+      attendees.forEach(person => {
+        const row = document.createElement('div')
+        row.className = 'event-attendee-menu__item'
+        const label = String(person.tag || person.username || person.userId || 'Attendee')
+        const avatarUrl = String(person.avatarUrl || '')
+        row.innerHTML = `
+          ${avatarUrl ? `<img src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(label)}" />` : `<span class="event-attendee-menu__fallback">${escapeHtml(label.slice(0, 1).toUpperCase())}</span>`}
+          <span>${escapeHtml(label)}</span>
+        `
+        list.appendChild(row)
+      })
+    }
+
+    hostCard.appendChild(menu)
+    openAttendeesMenu = menu
+  }
+
+  async function loadAttendees(eventId){
+    const resp = await fetch(`${AUTH_SERVER}/api/events/${encodeURIComponent(eventId)}/attendees`, {
+      credentials: 'include'
+    })
+    if(!resp.ok) throw new Error(`attendees_${resp.status}`)
+    return resp.json()
+  }
+
+  async function setAttending(eventId, attending){
+    const resp = await fetch(`${AUTH_SERVER}/api/events/${encodeURIComponent(eventId)}/attendees`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ attending })
+    })
+    if(!resp.ok) throw new Error(`attending_${resp.status}`)
+    return resp.json()
   }
 
   function eventSearchText(event){
@@ -83,6 +206,7 @@
 
   function renderEvents(events, queryText){
     eventsList.innerHTML = ''
+    closeAttendeesMenu()
     if(!events.length){
       renderEmpty(queryText ? `No events matched "${queryText}".` : 'No events were found.')
       if(searchSummary) searchSummary.textContent = queryText ? '0 events matched your search.' : ''
@@ -93,31 +217,69 @@
     grid.className = 'aos-warrant-grid event-grid'
 
     events.forEach(event => {
-      const card = document.createElement('article')
-      card.className = 'dashboard-card aos-warrant-card event-card'
-      card.innerHTML = `
-        <div class="dashboard-card__top">
-          <span class="dashboard-card__badge event-card__status">${escapeHtml(event.status || 'unknown')}</span>
-          <span class="dashboard-card__link">ID ${escapeHtml(event.id || 'N/A')}</span>
-        </div>
-        <h3 class="aos-warrant-card__title">${escapeHtml(event.title || 'Untitled Event')}</h3>
-        <p class="aos-warrant-card__subtitle">${escapeHtml(event.description || 'No description provided.')}</p>
+      const whenText = shortTime(event.nextRunAt || event.startAt)
+      const recurrenceText = event.isRecurring
+        ? `Repeats ${weekdayLabel(event.recurringWeekday)} ${event.recurringTimeUtc || ''}`.trim()
+        : 'One-time event'
+      const statusText = String(event.status || 'scheduled')
+      const desc = truncate(event.description || 'No description provided.', 140)
+      const summary = attendeeSummary(event)
 
-        <div class="aos-warrant-card__meta">
-          <div class="aos-warrant-card__row"><strong>Guild</strong><span>${escapeHtml(event.guildId || 'N/A')}</span></div>
-          <div class="aos-warrant-card__row"><strong>Hosts</strong><span>${escapeHtml(event.hostsText || 'N/A')}</span></div>
-          <div class="aos-warrant-card__row"><strong>Start</strong><span>${escapeHtml(formatTime(event.startAt))}</span></div>
-          <div class="aos-warrant-card__row"><strong>Recurring</strong><span>${event.isRecurring ? 'Yes' : 'No'}</span></div>
-          <div class="aos-warrant-card__row"><strong>Weekday</strong><span>${escapeHtml(weekdayLabel(event.recurringWeekday))}</span></div>
-          <div class="aos-warrant-card__row"><strong>Recurring UTC</strong><span>${escapeHtml(event.recurringTimeUtc || 'N/A')}</span></div>
-          <div class="aos-warrant-card__row"><strong>Next run</strong><span>${escapeHtml(formatTime(event.nextRunAt))}</span></div>
-          <div class="aos-warrant-card__row"><strong>Last run</strong><span>${escapeHtml(formatTime(event.lastRunAt))}</span></div>
-          <div class="aos-warrant-card__row"><strong>Ping role</strong><span>${escapeHtml(event.pingRoleId || 'N/A')}</span></div>
-          <div class="aos-warrant-card__row"><strong>Created by</strong><span>${escapeHtml(event.createdBy || 'N/A')}</span></div>
-          <div class="aos-warrant-card__row"><strong>Created</strong><span>${escapeHtml(formatTime(event.createdAt))}</span></div>
-          <div class="aos-warrant-card__row"><strong>Updated</strong><span>${escapeHtml(formatTime(event.updatedAt))}</span></div>
+      const card = document.createElement('article')
+      card.className = `dashboard-card aos-warrant-card event-card ${summary.meAttending ? 'event-card--attending' : ''}`
+      card.dataset.eventId = String(event.id || '')
+      card.innerHTML = `
+        <div class="event-card__header">
+          <span class="dashboard-card__badge event-card__status">${escapeHtml(statusText)}</span>
+          <span class="event-card__time">${escapeHtml(whenText)}</span>
+        </div>
+        <h3 class="event-card__title">${escapeHtml(event.title || 'Untitled Event')}</h3>
+        ${summary.meAttending ? '<p class="event-card__attending-indicator">You are attending</p>' : ''}
+        <p class="event-card__meta">Host(s): ${escapeHtml(event.hostsText || 'N/A')}</p>
+        <p class="event-card__meta">${escapeHtml(recurrenceText)}</p>
+        <p class="event-card__desc">${escapeHtml(desc)}</p>
+
+        <div class="event-card__footer">
+          <button type="button" class="btn btn-ghost event-attend-btn ${summary.meAttending ? 'is-on' : ''}">
+            ${summary.meAttending ? 'Interested' : 'I am interested'}
+          </button>
+          <button type="button" class="event-attendees-trigger" title="View attendees">
+            ${attendeeStackHtml(event)}
+          </button>
         </div>
       `
+
+      const attendBtn = card.querySelector('.event-attend-btn')
+      const attendeesBtn = card.querySelector('.event-attendees-trigger')
+
+      attendBtn.addEventListener('click', async () => {
+        const current = attendeeSummary(event)
+        const nextState = !current.meAttending
+        attendBtn.disabled = true
+        attendBtn.textContent = 'Saving...'
+        try{
+          const payload = await setAttending(event.id, nextState)
+          updateCardAttendance(event.id, payload && payload.attendance)
+          applySearch()
+        }catch(err){
+          console.error(err)
+          attendBtn.textContent = current.meAttending ? 'Interested' : 'I am interested'
+        }finally{
+          attendBtn.disabled = false
+        }
+      })
+
+      attendeesBtn.addEventListener('click', async (ev) => {
+        ev.stopPropagation()
+        try{
+          const payload = await loadAttendees(event.id)
+          updateCardAttendance(event.id, payload)
+          renderAttendeesMenu(card, payload)
+        }catch(err){
+          console.error(err)
+        }
+      })
+
       grid.appendChild(card)
     })
 
@@ -140,7 +302,6 @@
     statusMsg.textContent = 'Checking login...'
     const me = await ensureAuth()
     if(!me) return
-
     statusMsg.textContent = `Signed in as ${me.username}#${me.discriminator}. Loading events...`
 
     try{
@@ -174,6 +335,13 @@
   if(searchInput){
     searchInput.addEventListener('input', applySearch)
   }
+
+  document.addEventListener('click', (ev) => {
+    if(!openAttendeesMenu) return
+    if(openAttendeesMenu.contains(ev.target)) return
+    if(ev.target && ev.target.closest && ev.target.closest('.event-attendees-trigger')) return
+    closeAttendeesMenu()
+  })
 
   document.addEventListener('DOMContentLoaded', load)
 })()
