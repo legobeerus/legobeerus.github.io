@@ -544,6 +544,7 @@ function startApp(){
       nextRunAt: toText(event.next_run_at),
       lastRunAt: toText(event.last_run_at),
       pingRoleId: toText(event.ping_role_id),
+      createdByUsername: toText(event.created_by_username || event.created_by),
       createdBy: toText(event.created_by),
       status: toText(event.status),
       createdAt: toText(event.created_at),
@@ -1221,6 +1222,7 @@ function startApp(){
           last_run_at,
           ping_role_id,
           created_by,
+          created_by_username,
           status,
           created_at,
           updated_at

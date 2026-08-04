@@ -187,6 +187,7 @@
       event.hostsText,
       event.status,
       event.pingRoleId,
+      event.createdByUsername,
       event.createdBy,
       event.startAt,
       event.nextRunAt,
@@ -224,6 +225,7 @@
       const statusText = String(event.status || 'scheduled')
       const desc = truncate(event.description || 'No description provided.', 140)
       const summary = attendeeSummary(event)
+      const createdByLabel = event.createdByUsername || event.createdBy || 'N/A'
 
       const card = document.createElement('article')
       card.className = `dashboard-card aos-warrant-card event-card ${summary.meAttending ? 'event-card--attending' : ''}`
@@ -236,6 +238,7 @@
         <h3 class="event-card__title">${escapeHtml(event.title || 'Untitled Event')}</h3>
         ${summary.meAttending ? '<p class="event-card__attending-indicator">You are attending</p>' : ''}
         <p class="event-card__meta">Host(s): ${escapeHtml(event.hostsText || 'N/A')}</p>
+        <p class="event-card__meta">Created by: ${escapeHtml(createdByLabel)}</p>
         <p class="event-card__meta">${escapeHtml(recurrenceText)}</p>
         <p class="event-card__desc">${escapeHtml(desc)}</p>
 
