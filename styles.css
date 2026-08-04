@@ -851,7 +851,8 @@ a.btn.btn-primary:visited{
 .event-card__title{margin:0 0 7px;font-size:1.05rem;line-height:1.25}
 .event-card__attending-indicator{
   margin:0 0 12px;
-  display:inline-flex;
+  display:flex;
+  width:fit-content;
   align-items:center;
   padding:4px 9px;
   border-radius:999px;
