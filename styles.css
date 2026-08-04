@@ -873,12 +873,13 @@ a.btn.btn-primary:visited{
   justify-content:space-between;
   gap:10px;
 }
-.event-card__id{
-  margin:10px 0 0;
+.event-card .event-card__id{
+  margin:14px 0 0 !important;
   color:var(--muted);
   font-size:.76rem;
   line-height:1.2;
   letter-spacing:.02em;
+  display:block;
 }
 .event-attend-btn{
   padding:7px 11px;
