@@ -249,7 +249,7 @@
             ${attendeeStackHtml(event)}
           </button>
         </div>
-        <p class="event-card__id">Event ID: ${escapeHtml(event.id || 'N/A')}</p>
+        <div class="event-card__id">Event ID: ${escapeHtml(event.id || 'N/A')}</div>
       `
 
       const attendBtn = card.querySelector('.event-attend-btn')
