@@ -850,7 +850,7 @@ a.btn.btn-primary:visited{
 .event-card__time{color:var(--muted);font-size:.84rem;font-weight:700}
 .event-card__title{margin:0 0 7px;font-size:1.05rem;line-height:1.25}
 .event-card__attending-indicator{
-  margin:0 0 8px;
+  margin:0 0 12px;
   display:inline-flex;
   align-items:center;
   padding:4px 9px;
