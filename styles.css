@@ -180,6 +180,31 @@ a.btn.btn-primary:visited{
   .hero-media{width:100%}
   .hero h1{font-size:36px}
   .nav-links{display:none}
+  .nav{overflow:visible}
+  .nav .nav-inner{justify-content:space-between;padding:14px 0}
+  .nav .brand{position:static;left:auto}
+  .nav .nav-cta{position:static;right:auto}
+  .nav.nav-mobile-open .nav-links{
+    display:flex;
+    position:absolute;
+    top:calc(100% + 8px);
+    left:20px;
+    right:20px;
+    z-index:70;
+    flex-direction:column;
+    gap:4px;
+    padding:10px;
+    border-radius:12px;
+    background:linear-gradient(180deg, rgba(18,18,18,0.98), rgba(10,10,10,0.98));
+    border:1px solid rgba(255,255,255,0.08);
+    box-shadow:0 18px 40px rgba(0,0,0,0.42);
+    backdrop-filter:blur(10px);
+  }
+  .nav.nav-mobile-open .nav-links a{
+    width:100%;
+    padding:10px 12px;
+    border-radius:10px;
+  }
 }
 
 /* Small animations */
