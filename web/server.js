@@ -49,6 +49,8 @@ let hasReviewLocksTable = false;
 let hasAosWarrantsTable = false;
 let hasBotEventsTable = false;
 let hasEventAttendeesTable = false;
+let hasEventWeeklyAttendanceTable = false;
+let hasEventWeeklySubscriptionsTable = false;
 let aosTableColumns = new Set();
 if(!envDatabaseUrl){
   console.warn('DATABASE_URL not set in environment; Postgres support is disabled.');
@@ -127,6 +129,27 @@ if(!envDatabaseUrl){
         updated_at TIMESTAMPTZ DEFAULT NOW(),
         PRIMARY KEY (event_id, user_id)
       )`).catch(e=>{ console.warn('event_attendees table check failed', e && e.message) });
+      pgPool.query(`CREATE TABLE IF NOT EXISTS event_weekly_attendance (
+        event_id TEXT NOT NULL,
+        week_key TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        username TEXT,
+        discriminator TEXT,
+        avatar TEXT,
+        attending BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (event_id, week_key, user_id)
+      )`).catch(e=>{ console.warn('event_weekly_attendance table check failed', e && e.message) });
+      pgPool.query(`CREATE TABLE IF NOT EXISTS event_weekly_subscriptions (
+        event_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        last_week_key TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (event_id, user_id)
+      )`).catch(e=>{ console.warn('event_weekly_subscriptions table check failed', e && e.message) });
 
       pgPool.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='exams_sessions') AS exists`).then(r=>{
         hasExamSessionsTable = r.rows[0] && r.rows[0].exists;
@@ -172,6 +195,14 @@ if(!envDatabaseUrl){
         hasEventAttendeesTable = r.rows[0] && r.rows[0].exists;
         console.log('event_attendees table exists:', hasEventAttendeesTable);
       }).catch(e=>{ console.warn('Failed to check event_attendees table existence:', e && e.message) });
+      pgPool.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='event_weekly_attendance') AS exists`).then(r=>{
+        hasEventWeeklyAttendanceTable = r.rows[0] && r.rows[0].exists;
+        console.log('event_weekly_attendance table exists:', hasEventWeeklyAttendanceTable);
+      }).catch(e=>{ console.warn('Failed to check event_weekly_attendance table existence:', e && e.message) });
+      pgPool.query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='event_weekly_subscriptions') AS exists`).then(r=>{
+        hasEventWeeklySubscriptionsTable = r.rows[0] && r.rows[0].exists;
+        console.log('event_weekly_subscriptions table exists:', hasEventWeeklySubscriptionsTable);
+      }).catch(e=>{ console.warn('Failed to check event_weekly_subscriptions table existence:', e && e.message) });
       pgPool.query(`SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='bot_active_aos'`).then(cols=>{
         aosTableColumns = new Set((cols.rows || []).map(row => String(row.column_name || '').trim()).filter(Boolean));
         console.log('bot_active_aos columns:', Array.from(aosTableColumns));
@@ -569,63 +600,106 @@ function startApp(){
     return `https://cdn.discordapp.com/embed/avatars/${Math.abs(disc) % 5}.png`;
   }
 
-  async function getAttendanceSummaryForEvents(eventIds, viewerUserId){
-    const ids = (Array.isArray(eventIds) ? eventIds : []).map(id => String(id || '').trim()).filter(Boolean);
-    const summary = new Map();
-    if(!ids.length || !pgPool || !hasEventAttendeesTable) return summary;
+  function getAttendanceWeekKey(event, fallbackDate = new Date()){
+    if(!event || !event.isRecurring){
+      return String(event && event.id ? event.id : '');
+    }
 
-    const countRes = await pgPool.query(`
-      SELECT event_id, COUNT(*)::int AS total
-      FROM event_attendees
+    const source = event.nextRunAt || event.startAt || event.lastRunAt || fallbackDate;
+    const base = source instanceof Date ? source : new Date(source);
+    if(Number.isNaN(base.getTime())) return 'default';
+
+    const weekStart = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate()));
+    const day = weekStart.getUTCDay();
+    const diff = (day + 6) % 7;
+    weekStart.setUTCDate(weekStart.getUTCDate() - diff);
+
+    return `${weekStart.getUTCFullYear()}-${String(weekStart.getUTCMonth() + 1).padStart(2, '0')}-${String(weekStart.getUTCDate()).padStart(2, '0')}`;
+  }
+
+  function getAttendanceBucketKey(event, fallbackDate = new Date()){
+    const recurring = Boolean(event && event.isRecurring);
+    if(!recurring){
+      return String(event && event.id ? event.id : '');
+    }
+    return getAttendanceWeekKey(event, fallbackDate);
+  }
+
+  async function ensureWeeklySubscriptionAttendance(event, viewerUser){
+    if(!event || !viewerUser || !pgPool || !hasEventWeeklyAttendanceTable || !hasEventWeeklySubscriptionsTable) return;
+    if(!event.isRecurring) return;
+
+    const eventId = String(event.id || '').trim();
+    if(!eventId) return;
+
+    const weeklyRes = await pgPool.query(`
+      SELECT 1 AS found
+      FROM event_weekly_subscriptions
+      WHERE event_id = $1
+        AND user_id = $2
+        AND enabled = TRUE
+      LIMIT 1
+    `, [eventId, String(viewerUser.id || '')]);
+
+    if(!weeklyRes.rowCount) return;
+
+    const weekKey = getAttendanceBucketKey(event);
+    await pgPool.query(`
+      INSERT INTO event_weekly_attendance (event_id, week_key, user_id, username, discriminator, avatar, attending, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, TRUE, NOW(), NOW())
+      ON CONFLICT (event_id, week_key, user_id) DO UPDATE SET
+        username = EXCLUDED.username,
+        discriminator = EXCLUDED.discriminator,
+        avatar = EXCLUDED.avatar,
+        attending = EXCLUDED.attending,
+        updated_at = NOW()
+    `, [eventId, weekKey, String(viewerUser.id || ''), String(viewerUser.username || ''), String(viewerUser.discriminator || ''), String(viewerUser.avatar || '')]);
+  }
+
+  async function getAttendanceSummaryForEvents(events, viewerUser){
+    const summary = new Map();
+    const normalizedEvents = Array.isArray(events) ? events.filter(event => event && event.id) : [];
+    const ids = normalizedEvents.map(event => String(event.id || '').trim()).filter(Boolean);
+    if(!ids.length || !pgPool || !hasEventWeeklyAttendanceTable) return summary;
+
+    for(const event of normalizedEvents){
+      if(event.isRecurring && viewerUser){
+        await ensureWeeklySubscriptionAttendance(event, viewerUser);
+      }
+    }
+
+    const attendanceRows = await pgPool.query(`
+      SELECT event_id, week_key, user_id, username, discriminator, avatar, attending
+      FROM event_weekly_attendance
       WHERE attending = TRUE
         AND event_id = ANY($1::text[])
-      GROUP BY event_id
     `, [ids]);
 
-    const previewRes = await pgPool.query(`
-      SELECT event_id, user_id, username, discriminator, avatar, updated_at
-      FROM (
-        SELECT
-          event_id,
-          user_id,
-          username,
-          discriminator,
-          avatar,
-          updated_at,
-          ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY updated_at DESC) AS rn
-        FROM event_attendees
-        WHERE attending = TRUE
-          AND event_id = ANY($1::text[])
-      ) ranked
-      WHERE rn <= 3
-      ORDER BY event_id, updated_at DESC
-    `, [ids]);
-
-    const meRes = viewerUserId
+    const weeklySubscriptions = hasEventWeeklySubscriptionsTable && viewerUser
       ? await pgPool.query(`
           SELECT event_id
-          FROM event_attendees
-          WHERE attending = TRUE
-            AND user_id = $2
-            AND event_id = ANY($1::text[])
-        `, [ids, String(viewerUserId)])
+          FROM event_weekly_subscriptions
+          WHERE user_id = $1
+            AND enabled = TRUE
+            AND event_id = ANY($2::text[])
+        `, [String(viewerUser.id || ''), ids])
       : { rows: [] };
 
-    ids.forEach(eventId => {
-      summary.set(eventId, { count: 0, meAttending: false, preview: [] });
+    const subscribedEventIds = new Set((weeklySubscriptions.rows || []).map(row => String(row.event_id || '').trim()).filter(Boolean));
+    const rowsByEvent = new Map();
+
+    (attendanceRows.rows || []).forEach(row => {
+      const eventId = String(row.event_id || '').trim();
+      if(!eventId) return;
+      if(!rowsByEvent.has(eventId)) rowsByEvent.set(eventId, []);
+      rowsByEvent.get(eventId).push(row);
     });
 
-    (countRes.rows || []).forEach(row => {
-      const eventId = String(row.event_id || '');
-      const current = summary.get(eventId) || { count: 0, meAttending: false, preview: [] };
-      current.count = Number(row.total || 0);
-      summary.set(eventId, current);
-    });
-
-    (previewRes.rows || []).forEach(row => {
-      const eventId = String(row.event_id || '');
-      const current = summary.get(eventId) || { count: 0, meAttending: false, preview: [] };
-      current.preview.push({
+    normalizedEvents.forEach(event => {
+      const eventId = String(event.id || '').trim();
+      const bucketKey = getAttendanceBucketKey(event);
+      const eventRows = (rowsByEvent.get(eventId) || []).filter(row => String(row.week_key || '') === bucketKey);
+      const preview = eventRows.slice(0, 3).map(row => ({
         userId: String(row.user_id || ''),
         username: String(row.username || ''),
         discriminator: String(row.discriminator || ''),
@@ -633,40 +707,55 @@ function startApp(){
         tag: formatUserTag({ id: row.user_id, username: row.username, discriminator: row.discriminator }),
         avatarUrl: avatarUrlForUser(row.user_id, row.avatar, row.discriminator),
         updatedAt: row.updated_at || null
+      }));
+      const meAttending = Boolean(viewerUser && eventRows.some(row => String(row.user_id || '') === String(viewerUser.id || '')));
+      summary.set(eventId, {
+        count: eventRows.length,
+        meAttending,
+        preview,
+        weeklySubscription: Boolean(viewerUser && event.isRecurring && subscribedEventIds.has(eventId))
       });
-      summary.set(eventId, current);
-    });
-
-    (meRes.rows || []).forEach(row => {
-      const eventId = String(row.event_id || '');
-      const current = summary.get(eventId) || { count: 0, meAttending: false, preview: [] };
-      current.meAttending = true;
-      summary.set(eventId, current);
     });
 
     return summary;
   }
 
-  async function getEventAttendeesDetail(eventId, viewerUserId){
+  async function getEventAttendeesDetail(eventId, viewerUserId, event){
     const eventText = String(eventId || '').trim();
-    if(!eventText || !pgPool || !hasEventAttendeesTable) return { count: 0, meAttending: false, attendees: [] };
+    if(!eventText || !pgPool || !hasEventWeeklyAttendanceTable) return { count: 0, meAttending: false, attendees: [], preview: [], weeklySubscription: false };
+
+    const eventData = event || null;
+    const bucketKey = getAttendanceBucketKey(eventData);
 
     const attendeesRes = await pgPool.query(`
       SELECT user_id, username, discriminator, avatar, updated_at
-      FROM event_attendees
+      FROM event_weekly_attendance
       WHERE event_id = $1
+        AND week_key = $2
         AND attending = TRUE
       ORDER BY updated_at DESC
       LIMIT 500
-    `, [eventText]);
+    `, [eventText, bucketKey]);
 
     const meRes = viewerUserId
       ? await pgPool.query(`
           SELECT 1 AS found
-          FROM event_attendees
+          FROM event_weekly_attendance
+          WHERE event_id = $1
+            AND week_key = $2
+            AND user_id = $3
+            AND attending = TRUE
+          LIMIT 1
+        `, [eventText, bucketKey, String(viewerUserId)])
+      : { rowCount: 0 };
+
+    const weeklySubscriptionRes = hasEventWeeklySubscriptionsTable && viewerUserId
+      ? await pgPool.query(`
+          SELECT 1 AS found
+          FROM event_weekly_subscriptions
           WHERE event_id = $1
             AND user_id = $2
-            AND attending = TRUE
+            AND enabled = TRUE
           LIMIT 1
         `, [eventText, String(viewerUserId)])
       : { rowCount: 0 };
@@ -685,7 +774,8 @@ function startApp(){
       count: attendees.length,
       meAttending: Boolean(meRes && meRes.rowCount),
       attendees,
-      preview: attendees.slice(0, 3)
+      preview: attendees.slice(0, 3),
+      weeklySubscription: Boolean(weeklySubscriptionRes && weeklySubscriptionRes.rowCount)
     };
   }
 
@@ -1231,10 +1321,9 @@ function startApp(){
         LIMIT 2000
       `);
       const rows = (q.rows || []).map(normalizeBotEvent);
-      const eventIds = rows.map(row => row.id).filter(Boolean);
-      const attendanceSummary = await getAttendanceSummaryForEvents(eventIds, req.session.user.id);
+      const attendanceSummary = await getAttendanceSummaryForEvents(rows, req.session.user);
       rows.forEach(row => {
-        const summary = attendanceSummary.get(String(row.id || '')) || { count: 0, meAttending: false, preview: [] };
+        const summary = attendanceSummary.get(String(row.id || '')) || { count: 0, meAttending: false, preview: [], weeklySubscription: false };
         row.attendance = summary;
       });
       return res.json(rows);
@@ -1258,7 +1347,9 @@ function startApp(){
     try{
       const eventExists = await pgPool.query(`SELECT 1 FROM bot_events WHERE id::text = $1 LIMIT 1`, [eventId]);
       if(!eventExists.rowCount) return res.status(404).json({ error: 'event_not_found' });
-      const detail = await getEventAttendeesDetail(eventId, req.session.user.id);
+      const eventRow = await pgPool.query(`SELECT * FROM bot_events WHERE id::text = $1 LIMIT 1`, [eventId]);
+      const event = eventRow.rowCount ? normalizeBotEvent(eventRow.rows[0]) : null;
+      const detail = await getEventAttendeesDetail(eventId, req.session.user.id, event);
       return res.json(detail);
     }catch(e){
       console.error('DB list event attendees failed', e && e.message);
@@ -1283,9 +1374,16 @@ function startApp(){
     const attending = toBoolean(rawAttending);
     if(attending == null) return res.status(400).json({ error: 'invalid_attending_value' });
 
+    const rawSubscribeWeekly = req.body && Object.prototype.hasOwnProperty.call(req.body, 'subscribeWeekly')
+      ? req.body.subscribeWeekly
+      : (req.body && Object.prototype.hasOwnProperty.call(req.body, 'weekly') ? req.body.weekly : false);
+    const subscribeWeekly = toBoolean(rawSubscribeWeekly);
+
     try{
       const eventExists = await pgPool.query(`SELECT 1 FROM bot_events WHERE id::text = $1 LIMIT 1`, [eventId]);
       if(!eventExists.rowCount) return res.status(404).json({ error: 'event_not_found' });
+      const eventRow = await pgPool.query(`SELECT * FROM bot_events WHERE id::text = $1 LIMIT 1`, [eventId]);
+      const event = eventRow.rowCount ? normalizeBotEvent(eventRow.rows[0]) : null;
 
       const user = req.session.user;
       await pgPool.query(`
@@ -1300,8 +1398,36 @@ function startApp(){
           updated_at = NOW()
       `, [eventId, String(user.id || ''), String(user.username || ''), String(user.discriminator || ''), String(user.avatar || ''), attending]);
 
-      const detail = await getEventAttendeesDetail(eventId, req.session.user.id);
-      return res.json({ ok: true, eventId, attending, attendance: detail });
+      if(hasEventWeeklySubscriptionsTable && event && event.isRecurring){
+        const weeklyEnabled = Boolean(attending && subscribeWeekly);
+        await pgPool.query(`
+          INSERT INTO event_weekly_subscriptions (event_id, user_id, enabled, last_week_key, created_at, updated_at)
+          VALUES ($1, $2, $3, $4, NOW(), NOW())
+          ON CONFLICT (event_id, user_id)
+          DO UPDATE SET
+            enabled = EXCLUDED.enabled,
+            last_week_key = EXCLUDED.last_week_key,
+            updated_at = NOW()
+        `, [eventId, String(user.id || ''), weeklyEnabled, getAttendanceBucketKey(event)]);
+      }
+
+      if(hasEventWeeklyAttendanceTable){
+        const weekKey = getAttendanceBucketKey(event);
+        await pgPool.query(`
+          INSERT INTO event_weekly_attendance (event_id, week_key, user_id, username, discriminator, avatar, attending, created_at, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+          ON CONFLICT (event_id, week_key, user_id)
+          DO UPDATE SET
+            username = EXCLUDED.username,
+            discriminator = EXCLUDED.discriminator,
+            avatar = EXCLUDED.avatar,
+            attending = EXCLUDED.attending,
+            updated_at = NOW()
+        `, [eventId, weekKey, String(user.id || ''), String(user.username || ''), String(user.discriminator || ''), String(user.avatar || ''), attending]);
+      }
+
+      const detail = await getEventAttendeesDetail(eventId, req.session.user.id, event);
+      return res.json({ ok: true, eventId, attending, subscribeWeekly: Boolean(detail.weeklySubscription), attendance: detail });
     }catch(e){
       console.error('DB update event attendee failed', e && e.message);
       return res.status(502).json({ error: 'db_error' });

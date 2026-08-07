@@ -8,6 +8,7 @@
 
   let allEvents = []
   let openAttendeesMenu = null
+  let openAttendModal = null
 
   function ensureAuth(){
     return fetch(`${AUTH_SERVER}/api/me`, { credentials: 'include' })
@@ -73,7 +74,8 @@
     const count = Number(attendance.count || 0)
     const preview = Array.isArray(attendance.preview) ? attendance.preview : []
     const meAttending = Boolean(attendance.meAttending)
-    return { count, preview, meAttending }
+    const weeklySubscription = Boolean(attendance.weeklySubscription)
+    return { count, preview, meAttending, weeklySubscription }
   }
 
   function attendeeStackHtml(event){
@@ -112,7 +114,8 @@
     target.attendance = {
       count: Number(attendance && attendance.count || 0),
       meAttending: Boolean(attendance && attendance.meAttending),
-      preview: Array.isArray(attendance && attendance.preview) ? attendance.preview : []
+      preview: Array.isArray(attendance && attendance.preview) ? attendance.preview : [],
+      weeklySubscription: Boolean(attendance && attendance.weeklySubscription)
     }
   }
 
@@ -167,12 +170,12 @@
     return resp.json()
   }
 
-  async function setAttending(eventId, attending){
+  async function setAttending(eventId, attending, subscribeWeekly){
     const resp = await fetch(`${AUTH_SERVER}/api/events/${encodeURIComponent(eventId)}/attendees`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ attending })
+      body: JSON.stringify({ attending, subscribeWeekly })
     })
     if(!resp.ok) throw new Error(`attending_${resp.status}`)
     return resp.json()
@@ -205,9 +208,59 @@
     eventsList.appendChild(empty)
   }
 
+  function closeAttendModal(){
+    if(!openAttendModal) return
+    openAttendModal.remove()
+    openAttendModal = null
+  }
+
+  function openAttendPrompt(event, currentSummary, onConfirm){
+    closeAttendModal()
+
+    const modal = document.createElement('div')
+    modal.className = 'event-attendance-modal'
+    modal.innerHTML = `
+      <div class="event-attendance-modal__backdrop" data-close="true"></div>
+      <div class="event-attendance-modal__dialog" role="dialog" aria-modal="true" aria-label="Attendance options">
+        <h3 class="event-attendance-modal__title">${currentSummary.meAttending ? 'Update attendance' : 'Join this event'}</h3>
+        <p class="event-attendance-modal__text">${event.isRecurring ? 'Choose whether to be counted for this week and whether to stay signed up for future weekly events.' : 'Confirm your attendance for this event.'}</p>
+        ${event.isRecurring ? `
+          <label class="event-attendance-modal__option">
+            <span>Sign me up for future weekly events</span>
+            <input class="event-attendance-modal__checkbox" type="checkbox" ${currentSummary.weeklySubscription ? 'checked' : ''} />
+          </label>
+        ` : ''}
+        <div class="event-attendance-modal__actions">
+          <button type="button" class="btn btn-ghost event-attendance-modal__button event-attendance-modal__cancel">Cancel</button>
+          <button type="button" class="btn event-attendance-modal__button event-attendance-modal__confirm">Save</button>
+        </div>
+      </div>
+    `
+
+    const confirmButton = modal.querySelector('.event-attendance-modal__confirm')
+    const cancelButton = modal.querySelector('.event-attendance-modal__cancel')
+    const checkbox = modal.querySelector('.event-attendance-modal__checkbox')
+    const backdrop = modal.querySelector('.event-attendance-modal__backdrop')
+
+    const closeModal = () => {
+      closeAttendModal()
+    }
+
+    confirmButton.addEventListener('click', async () => {
+      closeModal()
+      await onConfirm(Boolean(checkbox && checkbox.checked))
+    })
+    cancelButton.addEventListener('click', closeModal)
+    backdrop.addEventListener('click', closeModal)
+
+    document.body.appendChild(modal)
+    openAttendModal = modal
+  }
+
   function renderEvents(events, queryText){
     eventsList.innerHTML = ''
     closeAttendeesMenu()
+    closeAttendModal()
     if(!events.length){
       renderEmpty(queryText ? `No events matched "${queryText}".` : 'No events were found.')
       if(searchSummary) searchSummary.textContent = queryText ? '0 events matched your search.' : ''
@@ -255,21 +308,23 @@
       const attendBtn = card.querySelector('.event-attend-btn')
       const attendeesBtn = card.querySelector('.event-attendees-trigger')
 
-      attendBtn.addEventListener('click', async () => {
+      attendBtn.addEventListener('click', () => {
         const current = attendeeSummary(event)
         const nextState = !current.meAttending
-        attendBtn.disabled = true
-        attendBtn.textContent = 'Saving...'
-        try{
-          const payload = await setAttending(event.id, nextState)
-          updateCardAttendance(event.id, payload && payload.attendance)
-          applySearch()
-        }catch(err){
-          console.error(err)
-          attendBtn.textContent = current.meAttending ? 'Interested' : 'I am interested'
-        }finally{
-          attendBtn.disabled = false
-        }
+        openAttendPrompt(event, current, async (subscribeWeekly) => {
+          attendBtn.disabled = true
+          attendBtn.textContent = 'Saving...'
+          try{
+            const payload = await setAttending(event.id, nextState, subscribeWeekly)
+            updateCardAttendance(event.id, payload && payload.attendance)
+            applySearch()
+          }catch(err){
+            console.error(err)
+            attendBtn.textContent = current.meAttending ? 'Interested' : 'I am interested'
+          }finally{
+            attendBtn.disabled = false
+          }
+        })
       })
 
       attendeesBtn.addEventListener('click', async (ev) => {
@@ -344,6 +399,13 @@
     if(openAttendeesMenu.contains(ev.target)) return
     if(ev.target && ev.target.closest && ev.target.closest('.event-attendees-trigger')) return
     closeAttendeesMenu()
+  })
+
+  document.addEventListener('keydown', (ev) => {
+    if(ev.key === 'Escape' && openAttendModal){
+      ev.stopPropagation()
+      closeAttendModal()
+    }
   })
 
   document.addEventListener('DOMContentLoaded', load)
