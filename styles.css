@@ -1062,9 +1062,10 @@ a.btn.btn-primary:visited{
   font-size:.93rem;
 }
 .event-attendance-modal__checkbox{accent-color:#36c76c;transform:scale(1.06)}
-.event-attendance-modal__actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.event-attendance-modal__actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;flex-wrap:wrap}
 .event-attendance-modal__button{padding:8px 11px;border-radius:10px;font-size:.9rem;font-weight:700}
 .event-attendance-modal__cancel{border-color:rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:var(--fg)}
+.event-attendance-modal__remove{border-color:rgba(255,104,162,0.24);background:rgba(255,104,162,0.12);color:#ffd0e1}
 .event-attendance-modal__confirm{background:rgba(54,199,108,0.16);border-color:rgba(54,199,108,0.3);color:#b8f5cb}
 
 @media (max-width:700px){

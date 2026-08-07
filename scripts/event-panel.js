@@ -223,15 +223,20 @@
       <div class="event-attendance-modal__backdrop" data-close="true"></div>
       <div class="event-attendance-modal__dialog" role="dialog" aria-modal="true" aria-label="Attendance options">
         <h3 class="event-attendance-modal__title">${currentSummary.meAttending ? 'Update attendance' : 'Join this event'}</h3>
-        <p class="event-attendance-modal__text">${event.isRecurring ? 'Choose whether to be counted for this week and whether to stay signed up for future weekly events.' : 'Confirm your attendance for this event.'}</p>
+        <p class="event-attendance-modal__text">${event.isRecurring ? 'Toggle your attendance for this week, or leave it blank to skip this week. You can also keep or remove your future weekly subscription.' : 'Confirm your attendance for this event.'}</p>
+        <label class="event-attendance-modal__option">
+          <span>I'm attending this week</span>
+          <input class="event-attendance-modal__checkbox event-attendance-modal__attendance-checkbox" type="checkbox" ${currentSummary.meAttending ? 'checked' : ''} />
+        </label>
         ${event.isRecurring ? `
           <label class="event-attendance-modal__option">
             <span>Sign me up for future weekly events</span>
-            <input class="event-attendance-modal__checkbox" type="checkbox" ${currentSummary.weeklySubscription ? 'checked' : ''} />
+            <input class="event-attendance-modal__checkbox event-attendance-modal__weekly-checkbox" type="checkbox" ${currentSummary.weeklySubscription ? 'checked' : ''} />
           </label>
         ` : ''}
         <div class="event-attendance-modal__actions">
           <button type="button" class="btn btn-ghost event-attendance-modal__button event-attendance-modal__cancel">Cancel</button>
+          <button type="button" class="btn btn-ghost event-attendance-modal__button event-attendance-modal__remove">Remove this week</button>
           <button type="button" class="btn event-attendance-modal__button event-attendance-modal__confirm">Save</button>
         </div>
       </div>
@@ -239,7 +244,9 @@
 
     const confirmButton = modal.querySelector('.event-attendance-modal__confirm')
     const cancelButton = modal.querySelector('.event-attendance-modal__cancel')
-    const checkbox = modal.querySelector('.event-attendance-modal__checkbox')
+    const removeButton = modal.querySelector('.event-attendance-modal__remove')
+    const attendanceCheckbox = modal.querySelector('.event-attendance-modal__attendance-checkbox')
+    const weeklyCheckbox = modal.querySelector('.event-attendance-modal__weekly-checkbox')
     const backdrop = modal.querySelector('.event-attendance-modal__backdrop')
 
     const closeModal = () => {
@@ -248,7 +255,15 @@
 
     confirmButton.addEventListener('click', async () => {
       closeModal()
-      await onConfirm(Boolean(checkbox && checkbox.checked))
+      const attendingThisWeek = Boolean(attendanceCheckbox && attendanceCheckbox.checked)
+      const subscribeWeekly = Boolean(weeklyCheckbox && weeklyCheckbox.checked)
+      await onConfirm(attendingThisWeek, subscribeWeekly)
+    })
+    removeButton.addEventListener('click', async () => {
+      closeModal()
+      if(attendanceCheckbox) attendanceCheckbox.checked = false
+      const subscribeWeekly = Boolean(weeklyCheckbox && weeklyCheckbox.checked)
+      await onConfirm(false, subscribeWeekly)
     })
     cancelButton.addEventListener('click', closeModal)
     backdrop.addEventListener('click', closeModal)
@@ -310,12 +325,11 @@
 
       attendBtn.addEventListener('click', () => {
         const current = attendeeSummary(event)
-        const nextState = !current.meAttending
-        openAttendPrompt(event, current, async (subscribeWeekly) => {
+        openAttendPrompt(event, current, async (attendingThisWeek, subscribeWeekly) => {
           attendBtn.disabled = true
           attendBtn.textContent = 'Saving...'
           try{
-            const payload = await setAttending(event.id, nextState, subscribeWeekly)
+            const payload = await setAttending(event.id, attendingThisWeek, subscribeWeekly)
             updateCardAttendance(event.id, payload && payload.attendance)
             applySearch()
           }catch(err){
